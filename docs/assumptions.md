@@ -283,6 +283,78 @@ because it is structurally correct, not because it delivered.
 
 ---
 
+## A-16 — The personal set point uses an ESTIMATED shrinkage, not a constant
+
+**Assume.** `theta_i = (n*ybar_i + k*mu_c)/(n + k)` with `k = sigma_within^2 /
+tau_between^2` estimated per dimension from a one-way random-effects
+decomposition of the proxy.
+
+**Why this replaced a constant.** With `k` fixed at 4.0 the estimator could not
+distinguish a cohort whose students genuinely differ from one whose students are
+alike. On a fixture with true set-point SD 0.242 it produced estimates with SD
+0.543 — over twice the real between-student variation, almost all noise. The
+filter then reverted `z` toward a noisy target and state recovery fell from
+r = 0.927 to 0.800; anything subtracting the set point subtracted that noise.
+
+**Measured effect of estimating it:**
+
+| | level-dominant | trajectory-dominant |
+|---|---|---|
+| estimated `k` (was 4.0) | **0.46** | **2.83** |
+| twin AUC | 0.705 -> **0.726** | 0.480 |
+| twin ECE | 0.0185 -> **0.0036** | 0.0109 |
+
+Students who genuinely differ are shrunk less; students who do not are shrunk
+more. The calibration gain in the level regime is a 5x improvement.
+
+**Limit.** It did not rescue the trajectory-dominant regime — see A-17.
+
+---
+
+## A-17 — The latent state cannot track fast within-student change
+
+**The limitation, stated plainly.** When risk depends on rapid deviation from a
+student's own baseline, the 2-D twin **loses to plain tier-1 features**:
+AUC 0.480 against 0.593 for `rolling_features` and 0.596 for prior-assessment.
+
+**Root cause — an information limit, not a readout flaw.** Week-to-week
+trajectory recovery is r ~ **0.57 in both regimes**, while level recovery is
+0.93 (level-dominant) and 0.80 (trajectory-dominant). One week of counts, with
+negative-binomial dispersion around 2–4 on 20–40 clicks, simply does not identify
+a half-SD change in latent state. A 2-D representation fitted to reconstruct
+observations cannot retain fluctuation the observations do not pin down. Eight
+windowed statistics over raw counts retain more of it than two latent dimensions.
+
+**Four candidate fixes were implemented and measured. Three were rejected:**
+
+| Candidate | level-dominant | trajectory-dominant | Verdict |
+|---|---|---|---|
+| Deviation from expanding mean | 0.704 -> 0.728 | 0.503 -> 0.482 | Kept (helps level; see below) |
+| Filter innovation (`posterior - prior`) | 0.704 -> 0.718 | 0.501 -> 0.483 | **Rejected** — no gain either regime |
+| Causal EB set-point deviation | 0.728 | 0.484 | **Rejected** — identical to the simple form, complexity for nothing |
+| Estimated shrinkage (A-16) | **0.726** | 0.480 | **Kept** — large gain where the twin works |
+
+The deviation feature is kept because it adds +0.024 AUC in the level regime and
+improves calibration; it costs ~0.02 in the trajectory regime, where the twin is
+near chance regardless. That trade is recorded rather than hidden.
+
+**What was NOT done, deliberately.** Feeding tier-1 features into the readout
+would raise trajectory-regime AUC immediately, and would destroy the property
+that prediction is a readout from the twin state. Adding latent dimensions was
+also rejected: the constraint is observation noise, not representational capacity,
+so a third dimension would add unidentifiability without adding information.
+
+**Consequence for the project's claims.** The twin's case rests on calibration,
+personalisation, generative simulation and explanation — not on discrimination.
+In environments where risk is driven by fast within-student change, a simple
+feature-based model is the better predictor and the report must say so.
+
+Pinned by `tests/test_readout_regimes.py::test_known_limitation_twin_underperforms
+_features_when_trajectory_dominates`, which fails if the limitation is ever
+genuinely fixed, forcing the documentation to be updated rather than drift.
+
+---
+
 ## Claims this project must not make
 
 Reproduced from the Gate 1 specification, kept here because this file lives with

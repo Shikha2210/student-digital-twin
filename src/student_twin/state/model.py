@@ -171,7 +171,12 @@ class TwinParameters:
 
     mu0: np.ndarray | None = None                      # (d,) global prior mean
     P0: np.ndarray | None = None                       # (d, d) prior covariance
-    setpoint_shrinkage: float = 4.0
+    #: variance ratio sigma_within^2 / tau_between^2, per dimension. Estimated,
+    #: not configured; the config value is only a fallback when it cannot be.
+    setpoint_shrinkage: float | np.ndarray = 4.0
+    #: estimated variance components, retained for diagnostics and reporting
+    between_var: np.ndarray | None = None
+    within_var: np.ndarray | None = None
     context_means: dict[str, np.ndarray] = field(default_factory=dict)
 
     fitted_on: str = "unknown"
@@ -197,15 +202,28 @@ class TwinParameters:
     def setpoint(self, context_id: str, student_mean: np.ndarray | None, n_obs: int) -> np.ndarray:
         """Empirical-Bayes personal set point.
 
-        Shrinks the student's own average toward the context mean, with weight
-        governed by how much has been seen. This is the partial pooling that makes
-        a brand-new student behave like their cohort instead of like nothing.
+        Shrinks the student's own average toward the context mean:
+
+            theta_i = (n * ybar_i + k * mu_c) / (n + k),   k = sigma_within^2 / tau_between^2
+
+        `k` is the variance ratio, ESTIMATED from the data (see `fit.py`), not a
+        constant. That matters more than it looks. With `k` fixed, the estimator
+        cannot tell a cohort whose students genuinely differ from one whose
+        students are alike, and in the latter case it reads within-student noise
+        as between-student spread: measured on a fixture with true setpoint
+        SD 0.242, a fixed k produced estimates with SD 0.543 - over twice the real
+        variation, almost all of it noise. Everything downstream that subtracts
+        the set point then subtracts that noise.
+
+        `setpoint_shrinkage` may be a scalar or one value per dimension, because
+        the between/within ratio differs by dimension - capability is observed far
+        more sparsely than engagement.
         """
-        ctx = self.context_means.get(context_id, self.mu0)
+        ctx = np.asarray(self.context_means.get(context_id, self.mu0), dtype=float)
         if student_mean is None or n_obs <= 0:
-            return np.asarray(ctx, dtype=float)
-        k = self.setpoint_shrinkage
-        return (n_obs * np.asarray(student_mean) + k * np.asarray(ctx)) / (n_obs + k)
+            return ctx
+        k = np.asarray(self.setpoint_shrinkage, dtype=float)
+        return (n_obs * np.asarray(student_mean, dtype=float) + k * ctx) / (n_obs + k)
 
 
 def transition(

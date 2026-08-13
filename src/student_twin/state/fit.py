@@ -152,10 +152,36 @@ def fit_twin(
     }
     mu0 = per_student[proxy_cols].mean().to_numpy(dtype=float)
 
+    # --- variance components -> empirical-Bayes shrinkage --------------
+    # A one-way random-effects decomposition of the proxy:
+    #   sigma_w^2  average within-student variance
+    #   tau^2      between-student variance of the student means, corrected for
+    #              the sampling noise those means carry (Var(ybar) = tau^2 + sw^2/n)
+    # The shrinkage constant is the ratio k = sigma_w^2 / tau^2. Estimating it is
+    # the difference between a set point that tracks a student's real norm and one
+    # that is mostly resampled noise; see TwinParameters.setpoint.
+    grp = df.groupby(["student_id", "context_id"], observed=True)[proxy_cols]
+    within = grp.var(ddof=1)
+    sigma_w2 = within.mean().to_numpy(dtype=float)
+    sigma_w2 = np.where(np.isfinite(sigma_w2) & (sigma_w2 > 0), sigma_w2, 1.0)
+    n_bar = float(max(grp.size().mean(), 1.0))
+    var_means = per_student[proxy_cols].var(ddof=1).to_numpy(dtype=float)
+    tau2 = np.maximum(var_means - sigma_w2 / n_bar, 1e-3)
+    shrink = np.clip(sigma_w2 / tau2, 0.05, 200.0)
+
     setpoints = {
         str(r["student_id"]): r[proxy_cols].to_numpy(dtype=float)
         for _, r in per_student.iterrows()
     }
+    # Apply the shrinkage to the raw student means so the stored set points are
+    # the empirical-Bayes estimates, not the unshrunk averages.
+    ctx_of = per_student.set_index("student_id")["context_id"].to_dict()
+    n_of = grp.size().reset_index().set_index(["student_id", "context_id"])[0].to_dict()
+    for sid, ybar in list(setpoints.items()):
+        cid = str(ctx_of.get(sid, ""))
+        mu_c = np.asarray(context_means.get(cid, mu0), dtype=float)
+        n_i = float(n_of.get((sid, cid), 1))
+        setpoints[sid] = (n_i * ybar + shrink * mu_c) / (n_i + shrink)
 
     # alpha and Q from the proxy dynamics: regress (z_{t+1} - z_t) on (theta - z_t)
     ordered = df.sort_values(["student_id", "context_id", "t"])
@@ -216,7 +242,9 @@ def fit_twin(
         score_params=score_params,
         mu0=mu0,
         P0=np.eye(d) * scfg.initial_state_variance,
-        setpoint_shrinkage=scfg.setpoint_shrinkage,
+        setpoint_shrinkage=shrink,
+        between_var=tau2,
+        within_var=sigma_w2,
         context_means=context_means,
         fitted_on=data.coverage.dataset,
         synthetic=(data.coverage.dataset == "synthetic"),
