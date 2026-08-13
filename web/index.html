@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StudyTwin — a digital twin for every student</title>
+<meta name="description" content="StudyTwin learns what normal looks like for each student, updates that picture every week, and simulates how the coming weeks could unfold — carrying its own uncertainty throughout.">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<div id="site">
+
+  <header class="nav">
+    <div class="page nav-in">
+      <a class="brand" href="#" data-go="">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 20a5 5 0 0 1-3.6-8.5A5 5 0 0 1 9 3.6M15.5 4a5 5 0 0 1 3.6 8.5A5 5 0 0 1 15 20.4M12 8v8"/></svg>
+        StudyTwin
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#question">The question</a>
+        <a href="#baseline">Personal baseline</a>
+        <a href="#futures">Futures</a>
+        <a href="#properties">Definition</a>
+        <a href="#rigour">Research</a>
+      </nav>
+      <a class="btn btn-primary" href="#/app" data-go="app">
+        Open the twin
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- ============================ HERO ============================ -->
+  <section class="hero">
+    <div class="page hero-grid">
+      <div>
+        <p class="eyebrow">Research prototype · synthetic data</p>
+        <h1 class="display">
+          A digital twin for<br>every student.<br>
+          <em class="t">Understand</em> today.<br>
+          <em class="i">Explore</em> tomorrow.
+        </h1>
+        <p class="lede">
+          StudyTwin learns what <em>normal</em> looks like for one student, revises that picture every
+          week as new observations arrive, and simulates how the coming weeks could unfold — carrying
+          its own uncertainty the whole way.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="#/app" data-go="app">
+            Open the twin
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn-ghost" href="#question">See why it's different</a>
+        </div>
+      </div>
+
+      <div class="hero-vis">
+        <div class="hero-vis-head">
+          <div>
+            <p class="card-title" style="margin-bottom:.1rem">One student, <span data-fig="weeks">20</span> weeks</p>
+            <p class="card-sub">Hover the chart to inspect any week</p>
+          </div>
+          <span class="chip chip-synthetic">Synthetic</span>
+        </div>
+        <div id="hero-vis"></div>
+        <p class="card-sub" style="margin-top:.9rem">
+          The dashed amber line is <em>this student's</em> normal (θ&nbsp;=&nbsp;<span class="num" data-fig="theta">1.01</span>).
+          Ribbon thickness is the 95% credible interval — the uncertainty is the mark itself, not an overlay.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ THE QUESTION ============================ -->
+  <section class="sec page" id="question">
+    <div class="sec-narrow">
+      <p class="eyebrow">The question</p>
+      <h2 class="sec">Most student analytics asks how a student compares to everyone else.</h2>
+      <p class="lede">That question has a blind spot, and it is a large one.</p>
+    </div>
+
+    <div class="contrast-pipe">
+      <div class="pipe-col">
+        <h4>Conventional analytics</h4>
+        <div class="pipe-steps">
+          <span>student</span><span>features</span><span>prediction</span>
+        </div>
+        <p class="pipe-note">One score, recomputed each week. No memory of what it believed last week.</p>
+      </div>
+      <div class="pipe-vs">versus</div>
+      <div class="pipe-col alt">
+        <h4>StudyTwin</h4>
+        <div class="pipe-steps">
+          <span>student</span><span>observations</span><span>personal state</span>
+          <span>weekly update</span><span>simulated futures</span>
+        </div>
+        <p class="pipe-note">A state that persists, updates, explains itself, and can be run forward.</p>
+      </div>
+    </div>
+
+    <div id="vis-cohort" class="narrative" style="margin-top:2rem"></div>
+
+    <div class="punch">
+      <p>
+        Same student, same week, two questions. Against the cohort they are unremarkable.
+        Against <b>their own</b> normal they are among the furthest below it.
+        A cohort-relative system sees nothing worth flagging.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================ PERSONAL BASELINE ============================ -->
+  <section class="sec page" id="baseline">
+    <div class="sec-narrow">
+      <p class="eyebrow">Personal baseline</p>
+      <h2 class="sec">Twelve logins is an ordinary week for one student and a collapse for another.</h2>
+      <p>
+        Every student gets a fitted baseline — <em>θ</em> — estimated by shrinking their own history
+        toward their cohort by an amount the data decides rather than a constant we choose. New students
+        look like their cohort; well-observed students look like themselves.
+      </p>
+    </div>
+
+    <div id="vis-contrast" class="contrast"></div>
+
+    <div class="punch">
+      <p>
+        Read those two carefully. The student on the <b>right</b> sits <b>lower</b> in absolute terms —
+        yet they are at their own normal. The student on the <b>left</b> scores <b>higher</b> and is
+        roughly a full unit <b>below</b> theirs. Context changes meaning, and only one of these two
+        warrants a conversation.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================ TIME ============================ -->
+  <section class="sec page">
+    <div class="sec-narrow">
+      <p class="eyebrow">Time</p>
+      <h2 class="sec">The twin remembers.</h2>
+      <p>
+        Each week the model does two things, always in this order. It <b>predicts</b> — pushing last
+        week's state forward, drifting toward the student's baseline, widening its uncertainty because
+        time has passed. Then it <b>updates</b> — folding in what actually happened, and narrowing again.
+        Last week's answer becomes this week's starting point.
+      </p>
+      <p>
+        That loop is not a metaphor. It is verified: updating recursively from the previous state gives
+        results identical to replaying every week from scratch, to <span class="num">0.00e+00</span>.
+        The state is a sufficient statistic for the student's history.
+      </p>
+      <div class="pipeline" role="list">
+        <span role="listitem">observations</span><i>→</i>
+        <span role="listitem">predict</span><i>→</i>
+        <span role="listitem">update</span><i>→</i>
+        <span role="listitem">state</span><i>→</i>
+        <span role="listitem">risk readout</span><i>→</i>
+        <span role="listitem">simulated futures</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ FUTURES ============================ -->
+  <section class="sec page" id="futures">
+    <div class="sec-narrow">
+      <p class="eyebrow">Simulation</p>
+      <h2 class="sec">Because the state is generative, it can be run forward.</h2>
+      <p>
+        Six hundred particles are drawn from the student's current posterior and pushed eight weeks
+        into the future. What comes back is a distribution over paths, not a single confident line.
+      </p>
+    </div>
+    <div class="strip-vis" style="margin-top:1.5rem">
+      <p class="sv-title">Observed trajectory, then simulated futures</p>
+      <p class="sv-sub">Solid is observed. Everything past the boundary is model-generated.</p>
+      <div id="vis-sim"></div>
+      <div class="note sim" style="margin-top:1rem">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6.5L5.2 17.4A2 2 0 0 0 6.9 20h10.2a2 2 0 0 0 1.7-2.6L14 9.5V3M7.5 14h9"/></svg>
+        <div>
+          <b>Model-generated scenario — not a causal estimate.</b> The dataset records no interventions,
+          so the sensitivity is <em>assumed</em>, not fitted. This shows what the model's dynamics imply,
+          never what an action would achieve for a real student.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ FOUR PROPERTIES ============================ -->
+  <section class="sec page" id="properties">
+    <div class="sec-narrow">
+      <p class="eyebrow">Definition</p>
+      <h2 class="sec">A digital twin is a claim, not a name.</h2>
+      <p class="lede">Ours is defined by four properties we can fail — and two of the four tests have not been written yet, which we say here rather than in a footnote.</p>
+    </div>
+
+    <div class="props">
+      <div class="prop">
+        <div class="prop-n">01</div>
+        <div>
+          <h3>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8"/></svg>
+            Personalised
+          </h3>
+          <p class="test">Set-point recovery <b>r = 0.94</b> against known ground truth</p>
+        </div>
+        <p>Learns each student's own baseline and how quickly they return to it after a setback. The reversion rate is a fitted parameter, not a hand-built feature.</p>
+      </div>
+
+      <div class="prop">
+        <div class="prop-n">02</div>
+        <div>
+          <h3>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3H21M21 3v5h-5M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3H3M3 21v-5h5"/></svg>
+            Continuous
+          </h3>
+          <p class="test">Test T1 <b>PASS</b> — recursive equals full replay, exactly</p>
+        </div>
+        <p>Updates each week as new observations arrive, carrying the entire history inside two numbers and their uncertainty. Not real-time: the data is weekly and historical.</p>
+      </div>
+
+      <div class="prop">
+        <div class="prop-n">03</div>
+        <div>
+          <h3>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9"/></svg>
+            Generative
+          </h3>
+          <p class="test">Test T2 <b>PASS</b> — 90% band covers 89.6% of held-out observations</p>
+        </div>
+        <p>Simulates many possible futures with honest spread. An earlier version failed this test with bands four times too wide; we found the cause and fixed it rather than moving the threshold.</p>
+      </div>
+
+      <div class="prop">
+        <div class="prop-n">04</div>
+        <div>
+          <h3>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6.5L5.2 17.4A2 2 0 0 0 6.9 20h10.2a2 2 0 0 0 1.7-2.6L14 9.5V3M7.5 14h9"/></svg>
+            Intervenable
+          </h3>
+          <p class="test">Test T3 <b style="color:var(--ink-3)">NOT IMPLEMENTED</b></p>
+        </div>
+        <p>Accepts a hypothetical action as a model input, structurally separate from any observation. The mechanism works; its stability across refits has not yet been tested.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ RESEARCH ============================ -->
+  <section class="sec page" id="rigour">
+    <div class="sec-narrow">
+      <p class="eyebrow">Research</p>
+      <h2 class="sec">Validated where it can be, and measured where it fails.</h2>
+      <p>
+        The latent state is unobservable, so it cannot be checked against real data — there is no
+        ground-truth column. We generate synthetic students from a known process instead, and ask
+        whether the estimator recovers what actually produced the data.
+      </p>
+    </div>
+
+    <div class="rigour-grid">
+      <div class="rig">
+        <div class="k">State recovery</div>
+        <div class="v">0.93</div>
+        <div class="d">correlation with the true latent engagement</div>
+      </div>
+      <div class="rig">
+        <div class="k">Calibration (ECE)</div>
+        <div class="v" data-fig="ece">0.0189</div>
+        <div class="d">how closely stated probabilities match outcomes</div>
+      </div>
+      <div class="rig warn">
+        <div class="k">Interval coverage</div>
+        <div class="v">81%</div>
+        <div class="d">nominal 95% intervals cover ~81% — over-confident</div>
+      </div>
+      <div class="rig warn">
+        <div class="k">Trajectory recovery</div>
+        <div class="v">0.57</div>
+        <div class="d">week-to-week change is much harder than level</div>
+      </div>
+      <div class="rig">
+        <div class="k">Automated tests</div>
+        <div class="v">86</div>
+        <div class="d">including tests that fail if a known limitation is fixed</div>
+      </div>
+      <div class="rig">
+        <div class="k">Leakage controls</div>
+        <div class="v">3</div>
+        <div class="d">identity permutation collapses to chance, as required</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ LIMITATIONS ============================ -->
+  <section class="sec page">
+    <div class="honest">
+      <p class="eyebrow">Scientific restraint</p>
+      <h2 class="sec" style="font-size:1.6rem">The limitations are part of the product.</h2>
+      <p style="margin-bottom:0">
+        An instrument that hides its failures is not an instrument. These appear inside the application
+        itself, beside the charts they qualify — not only in a paper:
+      </p>
+      <ul>
+        <li><b>Nothing has run on real student data.</b> Every figure on this site comes from a synthetic cohort with known ground truth. The OULAD dataset is prepared but has not been processed.</li>
+        <li><b>Interventions are not causal estimates.</b> No interventions are recorded anywhere in the data, so the sensitivity is assumed. Scenarios say what the model implies, never what an action would do.</li>
+        <li><b>Uncertainty is currently under-stated.</b> Nominal 95% intervals cover about 81% of true states. The interface says so beside the chart rather than quietly widening the band.</li>
+        <li><b>Two capability tests are unwritten</b>, so the latent dimensions are labels of convenience rather than validated constructs.</li>
+        <li><b>A simpler model sometimes wins.</b> Where risk is driven by fast week-to-week change, plain logistic regression on hand-built features outperforms the twin — and we publish that number alongside our own.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================ CTA ============================ -->
+  <section class="sec page">
+    <div class="sec-narrow">
+      <h2 class="sec">See a student's twin.</h2>
+      <p class="lede" style="margin-bottom:1.6rem">
+        One synthetic student across <span data-fig="weeks">20</span> weeks. Every chart, simulation and
+        metric in the application is generated by the actual pipeline.
+      </p>
+      <a class="btn btn-primary" href="#/app" data-go="app">
+        Open the twin
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+  </section>
+
+  <footer class="site">
+    <div class="page">
+      <p style="margin:0">
+        StudyTwin — a student digital twin research prototype. Built for the Open University Learning
+        Analytics Dataset (Kuzilek, Hlosta &amp; Zdrahal, <em>Scientific Data</em>, 2017). All displayed
+        data is synthetic; the model has never been run on real student data. Interventions shown are
+        model simulations, not causal estimates.
+      </p>
+    </div>
+  </footer>
+</div>
+
+<div id="app" class="app" hidden></div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
