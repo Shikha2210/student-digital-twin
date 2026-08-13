@@ -81,8 +81,12 @@ concentrated near 0 or 1 are modelled with too much confidence.
 | Parameter | **Hook only** — point estimates are treated as known |
 | Transfer | **Hook only** — requires the cross-context experiments |
 
-**Consequence.** Reported uncertainty is an **under-estimate**. Intervals are
-narrower than a full posterior would give. The dashboard says so beside the chart.
+**Consequence, now measured.** Nominal 95% state intervals cover only **~82%** of
+true latent states on the synthetic fixture
+(`tests/test_recovery.py::test_state_intervals_are_overconfident`). The twin is
+over-confident about where a student is. Reported uncertainty is an under-estimate
+exactly as predicted — and the size of the gap is now a pinned number rather than
+a caveat. Closing it requires the parameter-uncertainty track.
 
 ---
 
@@ -198,6 +202,84 @@ string; the pipeline banner and the dashboard both refuse to hide it.
 The system processes weeks in order from a fixed historical dataset. Nothing is
 live. Describing this as "real-time monitoring" would be false, and the proposal's
 use of that phrase needs correcting before submission.
+
+---
+
+## A-13 — Observation rows stop at withdrawal
+
+**Assume.** A student's weekly grid runs from week 0 to the week they withdrew, or
+to course end if they did not.
+
+**Why this is an entry rather than an obvious detail.** Prototype 1 extended the
+dense grid to the full horizon for everyone. Because withdrawal is common, **30.5%
+of all observation rows were fabricated post-withdrawal weeks**, every one exactly
+zero — against exactly **one** genuine zero-activity week among at-risk rows.
+
+The estimator was therefore learning "zero activity means very low state" from
+students who had already left, not from students disengaging. Measured effects of
+the bug:
+
+| Symptom | With bug | Fixed |
+|---|---|---|
+| Emission loading inflation vs truth | 2.16–2.41x | 1.03–1.13x |
+| T2 dispersion ratio (acceptable 0.5–2.0) | 3.90 **FAIL** | 1.62 **PASS** |
+
+**Implementation.** `features/tier1.py::student_horizons` derives the boundary from
+the WITHDRAW canonical event, so the feature layer needs no outcome data.
+Guarded by `test_grid_stops_at_withdrawal` and
+`test_no_all_zero_weeks_after_withdrawal`.
+
+**If wrong.** If a dataset records withdrawal late or not at all, the boundary is
+too generous and the artifact partially returns. Any new adapter must emit WITHDRAW
+events at the right week.
+
+---
+
+## A-14 — EM is implemented but OFF by default
+
+`fit_twin(..., n_em_iters=k)` now runs real EM: RTS smoothing over the filter's
+Gaussian approximations, then refitting emissions, set points, `alpha` and `Q`
+against smoothed states, with negative-binomial dispersion by maximum likelihood.
+
+**It is not enabled**, because on the synthetic fixture it does not earn its place:
+
+| | two-stage | EM x3 |
+|---|---|---|
+| `alpha` ratio vs truth | 2.21, 1.55 | 1.88, **0.57** |
+| `diag(Q)` ratio vs truth | 1.64, 1.52 | 0.79, **0.25** |
+| twin AUC | 0.705 | 0.709 |
+| **T2** | **PASS** (cov 0.909) | **FAIL** (cov 0.813) |
+
+EM improves the engagement dimension and **collapses the capability dimension** —
+`Q` falls to a quarter of truth and `phi` pins to its ceiling. The mechanism is
+sparse observation: scores arrive every 3–4 weeks, so the smoother has little
+information on capability, shrinks it, and the M-step then attributes even less
+variance to process noise, which shrinks it further.
+
+**Consequence.** The transition parameters remain biased under the default fit
+(`alpha` ~1.5–2.2x, `Q` ~1.5x). That is a documented deficiency, not a solved
+problem. Fixing it needs a constrained or partially-pooled M-step that cannot drive
+a dimension's variance to zero.
+
+---
+
+## A-15 — The readout sees deviation from a student's own running baseline
+
+The hazard readout consumes `z` **and** `dev = z - expanding_mean(z_{<=t})`.
+
+**Why.** The readout is linear in its inputs. With `z` alone it cannot represent a
+hazard that depends on departure from a personal norm — which is the case early
+warning usually cares about. Measured on a fixture where risk depends on deviation,
+the full model scored **below** a deviation-only model (0.520 vs 0.564): the
+information was present but inexpressible.
+
+**The baseline is an expanding mean, not the fitted set point.** The set point is
+estimated from a student's entire history and would leak the future into a
+forward-chained split.
+
+**Honest outcome.** This helped the level-dominant regime slightly (0.697 -> 0.705)
+and **did not rescue** the trajectory-dominant regime (0.520 -> 0.515). It is kept
+because it is structurally correct, not because it delivered.
 
 ---
 

@@ -102,7 +102,15 @@ def run_pipeline(
     cutoff_week: int | None = None,
     max_students: int | None = None,
     run_controls: bool = True,
+    n_em_iters: int = 0,
 ) -> PipelineResult:
+    """Run the whole pipeline.
+
+    `n_em_iters` defaults to 0 (two-stage fit only). EM is implemented and
+    available, but is NOT on by default: on the synthetic fixture it improves
+    some parameters and degrades others, with variance collapse on the sparsely
+    observed capability dimension. See docs/assumptions.md A-14.
+    """
     cfg = config or Config()
     timings: dict[str, float] = {}
     warns: list[str] = []
@@ -128,7 +136,7 @@ def run_pipeline(
 
     # -- fit + filter ----------------------------------------------------
     with _timed(timings, "fit"):
-        params = fit_twin(data, obs, ctx, cfg)
+        params = fit_twin(data, obs, ctx, cfg, n_em_iters=n_em_iters)
     setpoints = getattr(params, "student_setpoints", {})
 
     with _timed(timings, "filter"):

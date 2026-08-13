@@ -101,12 +101,6 @@ def fit_twin(
     cfg = config or Config()
     scfg: StateConfig = cfg.state
     d = scfg.n_dims
-    if n_em_iters:
-        raise NotImplementedError(
-            "EM refinement is Phase 1. The interface accepts n_em_iters so that "
-            "adding it does not change callers; passing a non-zero value now would "
-            "silently do nothing, which is worse than failing."
-        )
 
     df = build_proxies(obs)
     pe = df["proxy_engagement"].to_numpy(dtype=float)
@@ -228,4 +222,169 @@ def fit_twin(
         synthetic=(data.coverage.dataset == "synthetic"),
     )
     params.student_setpoints = setpoints  # type: ignore[attr-defined]
+
+    if n_em_iters:
+        params = _em_refine(params, obs, context_frame, cfg, n_iters=n_em_iters)
+    return params
+
+
+# --------------------------------------------------------------------------
+# EM refinement
+# --------------------------------------------------------------------------
+
+def _fit_phi_mle(y: np.ndarray, mu: np.ndarray) -> float:
+    """Maximum-likelihood negative-binomial dispersion, given fitted means.
+
+    Replaces the method-of-moments estimate, which is badly biased when the mean
+    is itself estimated from a noisy proxy.
+    """
+    from scipy.optimize import minimize_scalar
+    from scipy.special import gammaln
+
+    y = np.asarray(y, dtype=float)
+    mu = np.clip(np.asarray(mu, dtype=float), 1e-6, None)
+
+    def nll(log_phi: float) -> float:
+        phi = float(np.exp(log_phi))
+        return -float(np.sum(
+            gammaln(y + phi) - gammaln(phi) - gammaln(y + 1.0)
+            + phi * (np.log(phi) - np.log(phi + mu))
+            + y * (np.log(mu) - np.log(phi + mu))
+        ))
+
+    try:
+        res = minimize_scalar(nll, bounds=(np.log(0.25), np.log(200.0)), method="bounded")
+        return float(np.clip(np.exp(res.x), 0.25, 200.0))
+    except Exception:
+        return 4.0
+
+
+def _em_refine(
+    params: TwinParameters,
+    obs: pd.DataFrame,
+    context_frame: pd.DataFrame | None,
+    cfg: Config,
+    *,
+    n_iters: int,
+    tol: float = 1e-3,
+) -> TwinParameters:
+    """Iterate filter/smooth -> refit, starting from the two-stage estimate.
+
+    The two-stage fit is a good initialiser and a poor final answer: it regresses
+    against observable proxies, so proxy measurement noise is absorbed into the
+    transition as if it were process noise. That inflates both alpha (apparent
+    over-reversion) and Q. Refitting against SMOOTHED states removes that path.
+    """
+    from .filter import TwinFilter
+
+    d = params.n_dims
+    setpoints = dict(getattr(params, "student_setpoints", {}))
+
+    for it in range(n_iters):
+        prev_alpha = params.alpha.copy()
+
+        # --- E step: filter then smooth every student ----------------------
+        filt = TwinFilter(params, cfg.state)
+        trajs = filt.filter_all(obs, context_frame, setpoints=setpoints)
+
+        rows: list[pd.DataFrame] = []
+        for sid, traj in trajs.items():
+            if len(traj) < 2:
+                continue
+            m_s, _, _ = filt.smooth(traj)
+            rec = pd.DataFrame(m_s, columns=[f"s_{n}" for n in params.dim_names])
+            rec["student_id"] = sid
+            rec["context_id"] = traj.context_id
+            rec["t"] = [s.t for s in traj.states]
+            rows.append(rec)
+        if not rows:
+            break
+        smooth_df = pd.concat(rows, ignore_index=True)
+
+        merged = obs.merge(smooth_df, on=["student_id", "context_id", "t"], how="inner")
+        if merged.empty:
+            break
+        S = merged[[f"s_{n}" for n in params.dim_names]].to_numpy(dtype=float)
+
+        # --- M step: emissions against smoothed states ---------------------
+        new_counts: dict[str, tuple[float, np.ndarray, float]] = {}
+        for col in BEHAVIOR_COLS:
+            if col not in merged.columns:
+                continue
+            y = merged[col].fillna(0.0).to_numpy(dtype=float)
+            if len(y) < 10 or np.all(y == y[0]):
+                new_counts[col] = params.count_params.get(
+                    col, (float(np.log(max(y.mean(), 0.1))), np.zeros(d), 4.0)
+                )
+                continue
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                glm = PoissonRegressor(alpha=1e-6, max_iter=500).fit(S[:, [0]], y)
+            load = np.zeros(d)
+            load[0] = float(glm.coef_[0])
+            b0 = float(glm.intercept_)
+            mu = np.exp(np.clip(b0 + S[:, 0] * load[0], -12, 12))
+            new_counts[col] = (b0, load, _fit_phi_mle(y, mu))
+        params.count_params = new_counts
+
+        sub_col = CanonicalType.SUBMISSION.value
+        if sub_col in merged.columns:
+            ysub = (merged[sub_col].fillna(0.0).to_numpy(dtype=float) > 0).astype(int)
+            if 0 < ysub.sum() < len(ysub):
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    lr = LogisticRegression(max_iter=1000, C=1e3).fit(S, ysub)
+                params.submit_params = (float(lr.intercept_[0]), lr.coef_[0].copy())
+
+        sc_col = CanonicalType.SCORE.value
+        if sc_col in merged.columns and merged[sc_col].notna().any() and d >= 2:
+            mask = merged[sc_col].notna().to_numpy()
+            if mask.sum() >= 10:
+                s = merged.loc[mask, sc_col].clip(1e-4, 1 - 1e-4).to_numpy(dtype=float)
+                y_logit = np.log(s / (1 - s))
+                reg = LinearRegression().fit(S[mask][:, [1]], y_logit)
+                w = np.zeros(d)
+                w[1] = float(reg.coef_[0])
+                resid = y_logit - reg.predict(S[mask][:, [1]])
+                params.score_params = (
+                    float(reg.intercept_), w, float(max(resid.std(), 0.05))
+                )
+
+        # --- M step: set points and transition -----------------------------
+        scols = [f"s_{n}" for n in params.dim_names]
+        per_student = (
+            smooth_df.groupby(["student_id", "context_id"], observed=True)[scols]
+            .mean().reset_index()
+        )
+        setpoints = {
+            str(r["student_id"]): r[scols].to_numpy(dtype=float)
+            for _, r in per_student.iterrows()
+        }
+        params.context_means = {
+            str(cid): grp[scols].mean().to_numpy(dtype=float)
+            for cid, grp in per_student.groupby("context_id", observed=True)
+        }
+
+        ordered = smooth_df.sort_values(["student_id", "t"])
+        sid_arr = ordered["student_id"].to_numpy()
+        same = sid_arr[:-1] == sid_arr[1:]
+        alpha = params.alpha.copy()
+        Q = params.Q.copy()
+        for j, col in enumerate(scols):
+            z = ordered[col].to_numpy(dtype=float)
+            th = np.array([setpoints[str(s)][j] for s in sid_arr])
+            dz = (z[1:] - z[:-1])[same]
+            gap = (th[:-1] - z[:-1])[same]
+            if len(dz) > 20 and np.dot(gap, gap) > _EPS:
+                a = float(np.clip(np.dot(gap, dz) / np.dot(gap, gap), 0.01, 0.95))
+                alpha[j] = a
+                Q[j, j] = float(max(np.var(dz - a * gap), 1e-4))
+        params.alpha = alpha
+        params.Q = Q
+
+        if float(np.max(np.abs(alpha - prev_alpha))) < tol:
+            break
+
+    params.student_setpoints = setpoints  # type: ignore[attr-defined]
+    params.em_iterations = it + 1  # type: ignore[attr-defined]
     return params

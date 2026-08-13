@@ -108,6 +108,10 @@ class StateTrajectory:
     context_id: str
     states: list[TwinState] = field(default_factory=list)
     attributions: list[StepAttribution] = field(default_factory=list)
+    #: one-step-ahead prior at each step, retained so the RTS smoother does not
+    #: have to replay the filter
+    predicted_means: list[np.ndarray] = field(default_factory=list)
+    predicted_covs: list[np.ndarray] = field(default_factory=list)
 
     def __len__(self) -> int:
         return len(self.states)

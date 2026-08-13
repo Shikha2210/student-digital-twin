@@ -97,6 +97,41 @@ TIER1_FEATURES: tuple[str, ...] = tuple(s.name for s in _SPECS)
 _INACTIVE_CAP = 4.0
 
 
+def student_horizons(events: EventTable, n_weeks: int) -> pd.DataFrame:
+    """Last week each student was actually at risk, per (student, context).
+
+    A student who withdraws in week 6 has no week 7. Extending a dense grid past
+    that point invents zero-activity weeks that never happened, and because
+    withdrawal is common those fabricated zeros dominate the fit: they teach the
+    model "no activity means very low state" from students who had already left
+    rather than from students disengaging.
+
+    The boundary comes from the WITHDRAW event in the canonical table, so this
+    needs no outcome data and the feature layer keeps no dependency on it.
+    """
+    df = events.df
+    keys = df[["student_id", "context_id"]].drop_duplicates().copy()
+    wd = df[df["canonical_type"].astype(str) == CanonicalType.WITHDRAW.value]
+    last = (
+        wd.groupby(["student_id", "context_id"], observed=True)["t"].min()
+        .rename("last_week").reset_index()
+    )
+    out = keys.merge(last, on=["student_id", "context_id"], how="left")
+    out["last_week"] = out["last_week"].fillna(n_weeks - 1).astype(int)
+    out["last_week"] = out["last_week"].clip(0, n_weeks - 1)
+    return out
+
+
+def _at_risk_grid(events: EventTable, horizon: int) -> pd.DataFrame:
+    """Dense (student, context, week) grid truncated at each student's last week."""
+    keys = events.df[["student_id", "context_id"]].drop_duplicates()
+    grid = keys.merge(pd.DataFrame({"t": np.arange(horizon)}), how="cross")
+    hz = student_horizons(events, horizon)
+    grid = grid.merge(hz, on=["student_id", "context_id"], how="left")
+    grid = grid[grid["t"] <= grid["last_week"]].drop(columns=["last_week"])
+    return grid.reset_index(drop=True)
+
+
 def _trailing_slope(x: np.ndarray) -> float:
     """OLS slope over an equally spaced window; 0.0 when underdetermined."""
     n = len(x)
@@ -114,11 +149,12 @@ def build_tier1(
     *,
     n_weeks: int | None = None,
 ) -> pd.DataFrame:
-    """Build the tier-1 matrix, one row per (student, context, week).
+    """Build the tier-1 matrix, one row per (student, context, at-risk week).
 
-    The grid is dense: a student with no events in week 5 still gets a week-5 row,
-    because silence is an observation. Filling it in only at event weeks would
-    make disengagement invisible to the model.
+    The grid is dense *within the at-risk window*: a student with no events in
+    week 5 still gets a week-5 row, because silence is an observation. But it
+    stops at withdrawal - weeks after a student left are not silence, they are
+    non-existence, and inventing them poisons the fit (see `student_horizons`).
     """
     cfg = config or FeatureConfig()
     wide = events.weekly_pivot()
@@ -126,8 +162,7 @@ def build_tier1(
         return pd.DataFrame(columns=["student_id", "context_id", "t", *TIER1_FEATURES])
 
     horizon = int(n_weeks if n_weeks is not None else wide["t"].max() + 1)
-    keys = wide[["student_id", "context_id"]].drop_duplicates()
-    grid = keys.merge(pd.DataFrame({"t": np.arange(horizon)}), how="cross")
+    grid = _at_risk_grid(events, horizon)
     df = grid.merge(wide, on=["student_id", "context_id", "t"], how="left")
 
     present = [c for c in BEHAVIOR_COLS if c in df.columns]
@@ -227,13 +262,14 @@ def observation_frame(events: EventTable, n_weeks: int | None = None) -> pd.Data
     Distinct from the feature matrix: the filter needs counts and the submission
     indicator on their natural scales, because its emission models are count and
     Bernoulli likelihoods. Features are for baselines and explanation.
+
+    Truncated at the at-risk boundary for the same reason as `build_tier1`.
     """
     wide = events.weekly_pivot()
     if wide.empty:
         return wide
     horizon = int(n_weeks if n_weeks is not None else wide["t"].max() + 1)
-    keys = wide[["student_id", "context_id"]].drop_duplicates()
-    grid = keys.merge(pd.DataFrame({"t": np.arange(horizon)}), how="cross")
+    grid = _at_risk_grid(events, horizon)
     df = grid.merge(wide, on=["student_id", "context_id", "t"], how="left")
     for c in BEHAVIOR_COLS:
         if c in df.columns:

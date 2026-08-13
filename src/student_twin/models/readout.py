@@ -62,6 +62,25 @@ def build_person_period(
             rows.append(row)
 
     pp = pd.DataFrame(rows)
+
+    # Deviation from the student's own running baseline.
+    #
+    # Without this the readout is linear in z alone, so it cannot represent a
+    # hazard that depends on departure from a personal norm - measured on the
+    # trajectory-dominant fixture, the full model scored BELOW a deviation-only
+    # model (0.520 vs 0.564) because the information was present but
+    # inexpressible. Early warning is usually about change relative to a
+    # student's own normal, so this is the case that matters most.
+    #
+    # The baseline is an EXPANDING mean over weeks <= t, not the fitted set point.
+    # The set point is estimated from a student's whole history and would leak the
+    # future into a forward-chained split.
+    if len(pp):
+        pp = pp.sort_values(["student_id", "t"]).reset_index(drop=True)
+        g = pp.groupby("student_id", observed=True)
+        for name in params.dim_names:
+            base = g[f"z_{name}"].transform(lambda s: s.expanding().mean())
+            pp[f"dev_{name}"] = pp[f"z_{name}"] - base
     if context_frame is not None and len(pp) and len(params.context_covariates):
         cols = [c for c in params.context_covariates if c in context_frame.columns]
         if cols:
@@ -91,6 +110,7 @@ class HazardReadout:
         use_context: bool = True,
     ) -> "HazardReadout":
         feats = [f"z_{n}" for n in params.dim_names]
+        feats += [f"dev_{n}" for n in params.dim_names if f"dev_{n}" in person_period.columns]
         if use_context:
             feats += [c for c in params.context_covariates if c in person_period.columns]
         X = person_period[feats].to_numpy(dtype=float)

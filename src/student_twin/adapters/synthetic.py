@@ -59,12 +59,33 @@ class SyntheticAdapter(DatasetAdapter):
         n_weeks: int = 20,
         n_contexts: int = 2,
         seed: int = 20260813,
+        regime: str = "level_dominant",
     ) -> None:
+        """
+        `regime` controls where the outcome signal lives, which is what makes the
+        fixture able to test the model rather than merely exercise it:
+
+          level_dominant       hazard depends on the absolute state. Setpoints vary
+                               widely, so ~78% of latent variance is between-student
+                               and a level detector is the *correct* answer. This is
+                               the original fixture.
+
+          trajectory_dominant  hazard depends on the deviation from the student's own
+                               setpoint, and setpoints barely vary. Between-student
+                               level carries almost no signal, so a model that only
+                               reads the level must fail. This is the regime that
+                               tests whether the dynamics can earn their place.
+        """
+        if regime not in ("level_dominant", "trajectory_dominant"):
+            raise ValueError(f"unknown regime {regime!r}")
         self.n_students = n_students
         self.n_weeks = n_weeks
         self.n_contexts = n_contexts
         self.seed = seed
+        self.regime = regime
+        self.setpoint_sd = (0.9, 0.8) if regime == "level_dominant" else (0.25, 0.22)
         self._truth: dict[str, np.ndarray] = {}
+        self._true_setpoints: dict[str, np.ndarray] = {}
 
     def is_available(self) -> bool:
         return True  # generated on demand
@@ -101,6 +122,13 @@ class SyntheticAdapter(DatasetAdapter):
             raise RuntimeError("call load() before requesting ground-truth states")
         return self._truth
 
+    @property
+    def true_setpoints(self) -> dict[str, np.ndarray]:
+        """The theta_i used to generate each student. For set-point recovery tests."""
+        if not self._true_setpoints:
+            raise RuntimeError("call load() before requesting ground-truth setpoints")
+        return self._true_setpoints
+
     def load(self) -> AdapterOutput:
         rng = np.random.default_rng(self.seed)
         rows: list[dict] = []
@@ -129,7 +157,8 @@ class SyntheticAdapter(DatasetAdapter):
 
             for i in range(per_ctx):
                 sid = f"S{c:02d}{i:04d}"
-                theta = rng.normal([0.0, 0.0], [0.9, 0.8])
+                theta = rng.normal([0.0, 0.0], list(self.setpoint_sd))
+                self._true_setpoints[sid] = theta.copy()
                 z = theta + rng.normal(0, 0.5, size=2)
                 traj = np.zeros((self.n_weeks, 2))
 
@@ -165,9 +194,12 @@ class SyntheticAdapter(DatasetAdapter):
                                              channel="assessment",
                                              canonical_type=CanonicalType.SCORE.value,
                                              value=float(np.clip(_sigmoid(logit_s), 0.01, 0.99))))
-                    # hazard
+                    # hazard. In the trajectory-dominant regime it reads the
+                    # deviation from the student's own setpoint, so a model that
+                    # only knows their average level cannot predict it.
+                    zh = z if self.regime == "level_dominant" else (z - theta)
                     h = _sigmoid(TRUE_HAZARD[0] + hazard_shift
-                                 + TRUE_HAZARD[1] * z[0] + TRUE_HAZARD[2] * z[1])
+                                 + TRUE_HAZARD[1] * zh[0] + TRUE_HAZARD[2] * zh[1])
                     if rng.random() < h:
                         withdrew, wweek = True, t
                         rows.append(dict(student_id=sid, context_id=cid, t=t,

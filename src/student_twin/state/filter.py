@@ -189,6 +189,10 @@ class TwinFilter:
                 mean=m_post, cov=P_post, method=InferenceMethod.LAPLACE,
                 n_observations=total_obs,
             )
+            # Retain the one-step-ahead prediction: the RTS smoother needs it, and
+            # recomputing it later would require replaying the filter.
+            traj.predicted_means.append(m_pred)
+            traj.predicted_covs.append(P_pred)
             traj.states.append(state)
             traj.attributions.append(
                 StepAttribution(
@@ -202,6 +206,41 @@ class TwinFilter:
             )
             prior_state = state
         return traj
+
+    def smooth(self, traj: StateTrajectory) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """RTS smoother over the filter's Gaussian approximations.
+
+        Returns (means, covs, lag1_covs) where means[t] approximates E[z_t | y_1:T]
+        - the full-history estimate, not the filtered one. The M-step needs these:
+        fitting transition parameters on *filtered* states double-counts
+        observation noise as process noise, which is what currently inflates
+        alpha and Q.
+
+        Approximate for the same reason the filter is: the underlying posterior
+        is non-Gaussian and we are smoothing its Laplace approximation.
+        """
+        n = len(traj.states)
+        d = self.params.n_dims
+        if n == 0:
+            return np.empty((0, d)), np.empty((0, d, d)), np.empty((0, d, d))
+
+        m_f = np.vstack([s.mean for s in traj.states])
+        P_f = np.stack([s.cov for s in traj.states])
+        m_p = np.vstack(traj.predicted_means) if traj.predicted_means else m_f
+        P_p = np.stack(traj.predicted_covs) if traj.predicted_covs else P_f
+
+        F = transition_jacobian(self.params)
+        m_s = m_f.copy()
+        P_s = P_f.copy()
+        lag1 = np.zeros((max(n - 1, 0), d, d))
+
+        for t in range(n - 2, -1, -1):
+            # J_t = P_{t|t} F^T (P_{t+1|t})^-1
+            J = P_f[t] @ F.T @ _safe_inv(P_p[t + 1])
+            m_s[t] = m_f[t] + J @ (m_s[t + 1] - m_p[t + 1])
+            P_s[t] = _symmetrise(P_f[t] + J @ (P_s[t + 1] - P_p[t + 1]) @ J.T)
+            lag1[t] = P_s[t + 1] @ J.T
+        return m_s, P_s, lag1
 
     def filter_all(
         self,

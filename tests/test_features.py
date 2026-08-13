@@ -35,11 +35,54 @@ def test_no_institution_specific_features_exist():
     assert REGISTRY.names(tier=3) == []
 
 
-def test_grid_is_dense_silence_is_observed(feats):
-    """A student with no events in a week still gets a row: silence is a datum."""
-    counts = feats.groupby("student_id")["t"].agg(["min", "count"])
-    assert (counts["min"] == 0).all()
-    assert counts["count"].nunique() == 1, "every student must span the same week grid"
+def test_grid_is_dense_within_the_at_risk_window(feats):
+    """Silence is a datum; non-existence is not.
+
+    Every student's weeks start at 0 and are contiguous - a quiet week still
+    gets a row, because disengagement must be visible. But the grid stops at
+    withdrawal. Extending it past that invents zero-activity weeks that never
+    happened, and since withdrawal is common those fabricated zeros dominate
+    the fit and teach the model "no activity means very low state" from
+    students who had already left.
+    """
+    for sid, grp in feats.groupby("student_id"):
+        weeks = sorted(grp["t"].tolist())
+        assert weeks[0] == 0, f"{sid} does not start at week 0"
+        assert weeks == list(range(len(weeks))), f"{sid} has a gap in its week grid"
+
+
+def test_grid_stops_at_withdrawal(small_data, config):
+    """The at-risk boundary comes from the WITHDRAW event, and is respected."""
+    from student_twin.features.tier1 import student_horizons
+
+    feats = build_tier1(small_data.events, config.features, n_weeks=12)
+    hz = student_horizons(small_data.events, 12).set_index("student_id")["last_week"]
+    last_seen = feats.groupby("student_id")["t"].max()
+    for sid, last in last_seen.items():
+        assert last == hz[sid], f"{sid} spans past its at-risk boundary"
+
+    out = small_data.outcomes.df.set_index("student_id")
+    withdrawers = out[out["event_observed"]]
+    assert len(withdrawers) > 0, "fixture must contain withdrawals for this to be meaningful"
+    for sid, rec in withdrawers.iterrows():
+        assert last_seen[sid] == int(rec["event_week"])
+
+
+def test_no_all_zero_weeks_after_withdrawal(small_data, config):
+    """Regression guard for the bug this fix addresses.
+
+    Before truncation, 30.5% of observation rows were fabricated post-withdrawal
+    zeros, against exactly one genuine zero-activity week among at-risk rows.
+    """
+    from student_twin.features.tier1 import BEHAVIOR_COLS, observation_frame
+
+    obs = observation_frame(small_data.events, n_weeks=12)
+    act = obs[[c for c in BEHAVIOR_COLS if c in obs.columns]].sum(axis=1)
+    zero_frac = float((act == 0).mean())
+    assert zero_frac < 0.05, (
+        f"{zero_frac:.1%} of at-risk weeks have zero activity; the grid is probably "
+        "extending past withdrawal again"
+    )
 
 
 def test_engagement_ratio_does_not_use_current_week():

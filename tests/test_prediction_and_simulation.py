@@ -71,7 +71,14 @@ def test_readout_is_separable_from_state(pp, params):
     p = r.hazard(te)
     assert len(p) == len(te)
     assert np.all((p >= 0) & (p <= 1))
-    assert all(f.startswith("z_") or f in params.context_covariates for f in r.feature_names)
+    # The readout may consume state (z_), state-derived deviation from a student's
+    # own running baseline (dev_), and context covariates. Nothing else - in
+    # particular no tier-1 feature, which is what test_readout_consumes_only_state
+    # _and_context checks from the other direction.
+    assert all(
+        f.startswith(("z_", "dev_")) or f in params.context_covariates
+        for f in r.feature_names
+    )
 
 
 def test_readout_consumes_only_state_and_context(pp, params, feats):

@@ -53,28 +53,46 @@ To use real data, put the OULAD CSVs in `data/raw/oulad/` — see
 - Per-channel explanation of every weekly state change.
 - Forward simulation with uncertainty bands and scenario comparison.
 
-## What is failing, and why that is reported rather than fixed
+## Phase 2 result: T2 now passes, and why
 
-**T2 (generativity) FAILS: dispersion ratio 3.90, acceptable range 0.5–2.0.**
+**T2 (generativity) PASSES: dispersion 1.62, coverage 90.4%.** It previously
+failed at 3.90. The thresholds were **not** touched — the cause was a data bug.
 
-Simulated trajectories are roughly four times more dispersed than real ones. The
-90% band covers 98.3% of held-out observations — coverage looks *excellent*
-precisely because the forecast is saying very little. Under-confidence is a
-failure too, and a coverage-only test would have waved it through.
+The observation grid ran to the full horizon for every student, so **30.5% of all
+rows were fabricated post-withdrawal weeks**, every one exactly zero, against
+exactly **one** genuine zero-activity week among at-risk rows. The estimator was
+learning "zero activity means very low state" from students who had already left.
+Truncating the grid at withdrawal cut emission-loading inflation from **2.16–2.41x
+down to 1.03–1.13x** and fixed T2 as a side effect. See
+[A-13](docs/assumptions.md).
 
-Per Gate 1, the consequence is that scenario outputs are not yet trustworthy as
-calibrated forecasts. The dashboard still shows them, labelled, because the
-*mechanism* is what this prototype is demonstrating.
+## What is still failing
 
-**The twin is currently a level detector, not a trajectory detector.**
-`permute_time` (which shuffles weeks within a student, preserving their mean
-exactly) barely dents AUC — 0.737 → 0.726. This is not leakage; the leakage test
-(`permute_student_identity`) collapses to 0.495 as required. It means the
-dynamics are not yet earning their place, which is exactly Gate 1 weakness 1.
+**The twin is a level detector, not a trajectory detector** — now measured three
+independent ways rather than inferred:
 
-**GBM underperforms the majority baseline** on the synthetic fixture (AUC 0.497).
-With a 3.9% weekly event rate and ~650 test rows there is too little signal.
-Reported as-is; it needs real data before it means anything.
+| Evidence | Result |
+|---|---|
+| Signal decomposition | trajectory share **5.6%**; level alone 0.728 of full 0.741 |
+| `permute_time` control | AUC 0.705 -> 0.691, barely dented |
+| Ground-truth recovery | level r = **0.938**, trajectory r = **0.588** (capability: 0.657 / **0.153**) |
+
+Part of this is the fixture: its ground truth is **77.5%/83.8% between-student**
+variance, so a level detector is the *correct* answer there. A
+`trajectory_dominant` regime was added to test the model rather than the fixture —
+and there the twin scores **0.515 against `rolling_features` at 0.601**. A plain
+logistic model on tier-1 features beats the latent state when trajectory is the
+signal. That is Gate 1 weakness 1, confirmed.
+
+**Uncertainty is over-confident.** Nominal 95% state intervals cover **~82%** of
+true states, exactly as A-05 predicted, now pinned by a test.
+
+**EM is implemented but off by default.** It improves engagement and collapses
+capability (`Q` to 0.25x truth), and makes T2 fail again. Reported, not enabled —
+see [A-14](docs/assumptions.md).
+
+**Twin vs baselines is near-parity**: 0.705 twin, 0.695 prior-assessment, 0.694
+rolling-features. Which is exactly what Gate 1 H1 predicted.
 
 ---
 

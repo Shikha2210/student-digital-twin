@@ -161,6 +161,104 @@ def check_T2_generativity(
     )
 
 
+@dataclass
+class SignalDecomposition:
+    """Where the predictive signal actually lives.
+
+    `level` is the student's own running mean state - a between-student quantity.
+    `deviation` is z_t minus that mean - a within-student, trajectory quantity.
+    Both are computed causally (expanding mean over weeks <= t), because using
+    the full-trajectory mean would leak the future into the level term.
+    """
+
+    auc_full: float
+    auc_level_only: float
+    auc_deviation_only: float
+    n_test: int
+    positives: int
+
+    @property
+    def trajectory_share(self) -> float:
+        """How much discrimination the deviation term adds over the level alone.
+
+        Near 0 means the twin is a level detector and its dynamics are decorative.
+        """
+        lift_level = max(0.0, self.auc_level_only - 0.5)
+        lift_dev = max(0.0, self.auc_deviation_only - 0.5)
+        total = lift_level + lift_dev
+        if total <= 0:
+            return float("nan")
+        # Share of the available discrimination that the within-student term
+        # supplies. Bounded [0,1] by construction: comparing against auc_full
+        # allowed values above 1 whenever the level term scored below chance.
+        return float(lift_dev / total)
+
+    @property
+    def verdict(self) -> str:
+        s = self.trajectory_share
+        if np.isnan(s):
+            return "UNDEFINED (no discrimination to decompose)"
+        if s < 0.15:
+            return "LEVEL-DRIVEN: dynamics are not earning their place"
+        if s < 0.40:
+            return "MIXED: level dominates but trajectory contributes"
+        return "TRAJECTORY-DRIVEN: within-student change carries real signal"
+
+    def as_dict(self) -> dict:
+        return {
+            "auc_full": round(self.auc_full, 4),
+            "auc_level_only": round(self.auc_level_only, 4),
+            "auc_deviation_only": round(self.auc_deviation_only, 4),
+            "trajectory_share": (
+                None if np.isnan(self.trajectory_share) else round(self.trajectory_share, 4)
+            ),
+            "verdict": self.verdict,
+            "n_test": self.n_test,
+            "positives": self.positives,
+        }
+
+
+def decompose_level_vs_trajectory(
+    person_period: pd.DataFrame, params, cutoff_week: int
+) -> SignalDecomposition:
+    """Split the state into between-student level and within-student deviation.
+
+    This answers Gate 1 weakness 1 directly, rather than inferring it from a
+    permutation control. `permute_time` cannot distinguish "level-driven" from
+    "leaking" on its own; this can.
+    """
+    from ..evaluation.metrics import auc as _auc
+    from ..evaluation.splits import forward_chained_split
+    from ..models.readout import HazardReadout
+
+    zc = [f"z_{n}" for n in params.dim_names]
+    pp = person_period.sort_values(["student_id", "t"]).copy()
+
+    g = pp.groupby("student_id", observed=True)
+    for c in zc:
+        pp[f"{c}__level"] = g[c].transform(lambda s: s.expanding().mean())
+        pp[f"{c}__dev"] = pp[c] - pp[f"{c}__level"]
+
+    def _run(cols: list[str]) -> float:
+        frame = pp.copy()
+        for src, dst in zip(cols, zc):
+            frame[dst] = pp[src]
+        tr, te = forward_chained_split(frame, cutoff_week)
+        if tr.empty or te.empty or tr["y"].nunique() < 2:
+            return float("nan")
+        r = HazardReadout.fit(tr, params)
+        return _auc(te["y"].to_numpy(int), r.hazard(te))
+
+    tr, te = forward_chained_split(pp, cutoff_week)
+    return SignalDecomposition(
+        auc_full=_run(zc),
+        auc_level_only=_run([f"{c}__level" for c in zc]),
+        auc_deviation_only=_run([f"{c}__dev" for c in zc]),
+        n_test=len(te),
+        positives=int(te["y"].sum()) if len(te) else 0,
+    )
+
+
 def check_T3_intervention_stability(*_args, **_kwargs) -> TwinTestResult:
     raise NotImplementedError(
         "T3 requires refitting across seeds and checking sign/magnitude stability of "
