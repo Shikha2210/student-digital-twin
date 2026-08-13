@@ -395,6 +395,24 @@
   let currentWeek = st.t.length - 1;
   let scenarioOn = true;
 
+  function modeBanner(mode) {
+    if (mode === "personal") {
+      return el("div", { class: "mode-banner" }, [
+        icon("user", 15),
+        el("span", { html: "<b>Your Twin.</b> Stored on this device. No observations collected yet." }),
+        el("span", { class: "spacer" }),
+        el("a", { class: "link-btn", href: "#/app", "data-go": "app", text: "Open the demo twin" }),
+      ]);
+    }
+    return el("div", { class: "mode-banner" }, [
+      icon("alert", 15),
+      el("span", { html: "<b>Demonstration only — not a real student.</b> A synthetic cohort with known " +
+        "ground truth. Every figure is real pipeline output; none of it describes a person." }),
+      el("span", { class: "spacer" }),
+      el("a", { class: "link-btn", href: "#/onboarding", "data-go": "onboarding", text: "Create your own Twin" }),
+    ]);
+  }
+
   function provenanceChips() {
     const p = (D && D.provenance) || {};
     const kids = [
@@ -685,10 +703,13 @@
     return el("span", {}, [sw, el("span", { text: text })]);
   }
 
+  /* Two distinct experiences, never mixed. `mode` decides which routes appear
+     in the sidebar and which banner sits above the content. */
   const VIEWS = {
-    overview: { label: "Twin overview", icon: "home", render: viewOverview },
-    futures: { label: "Futures & interventions", icon: "beaker", render: viewFutures },
-    research: { label: "Research & data", icon: "chart", render: viewResearch },
+    mytwin:   { label: "My Twin",        icon: "user",   render: viewTwinNew,  mode: "personal" },
+    overview: { label: "Overview",       icon: "home",   render: viewOverview, mode: "demo" },
+    futures:  { label: "Future Lab",     icon: "beaker", render: viewFutures,  mode: "demo" },
+    research: { label: "Research & data", icon: "chart", render: viewResearch, mode: "demo" },
   };
 
   function mountApp(route) {
@@ -698,12 +719,19 @@
     const brand = el("div", { class: "side-brand" }, [icon("twin", 20), el("span", { text: "StudyTwin" })]);
     side.appendChild(brand);
     const nav = el("nav", { class: "side-nav", "aria-label": "Application" });
-    Object.entries(VIEWS).forEach(([k, cfg]) => {
+    const mode = VIEWS[route].mode;
+    Object.entries(VIEWS).filter(([, c]) => c.mode === mode).forEach(([k, cfg]) => {
       const b = el("button", { type: "button" }, [icon(cfg.icon, 17), el("span", { text: cfg.label })]);
       if (k === route) b.setAttribute("aria-current", "page");
-      b.addEventListener("click", () => go("app/" + k));
+      b.addEventListener("click", () => go(mode === "personal" ? "twin" : "app/" + k));
       nav.appendChild(b);
     });
+    if (mode === "personal") {
+      const toDemo = el("button", { type: "button" }, [icon("layers", 17),
+        el("span", { text: "Explore the demo" })]);
+      toDemo.addEventListener("click", () => go("app/overview"));
+      nav.appendChild(toDemo);
+    }
     side.appendChild(nav);
     side.appendChild(el("div", { class: "side-foot", html: "Synthetic cohort.<br>The model has never been run on real OULAD data." }));
     const back = el("button", { type: "button", class: "side-foot", style: "text-align:left;width:100%", text: "← Back to site" });
@@ -713,15 +741,22 @@
 
     const main = el("div", { class: "main" });
     const top = el("header", { class: "topbar" });
+    const prof = Store.read();
+    const personal = VIEWS[route].mode === "personal";
     top.appendChild(el("div", { class: "subject" }, [
       icon("user", 18),
       el("div", {}, [
-        el("div", { class: "sid", text: D.student.id }),
-        el("div", { class: "meta", text: D.student.context + " · " + D.student.weeks + " observed weeks" }),
+        el("div", { class: "sid", text: personal
+          ? ((prof && prof.name) || "Your Twin")
+          : "Synthetic Student SYN-" + D.student.id }),
+        el("div", { class: "meta", text: personal
+          ? ((prof && prof.courses.length ? prof.courses.length + " courses · " : "") + "0 observed weeks")
+          : D.student.context + " · " + D.student.weeks + " observed weeks" }),
       ]),
     ]));
     top.appendChild(provenanceChips());
     main.appendChild(top);
+    main.appendChild(modeBanner(mode));
 
     const bad = contractViolations();
     if (bad.length) {
@@ -748,7 +783,32 @@
   function render() {
     const h = location.hash.replace(/^#\/?/, "");
     const site = $("#site"), app = $("#app");
+
+    // onboarding and the first-run twin live outside the demo shell
+    if (h.startsWith("onboarding")) {
+      site.hidden = true; app.hidden = false;
+      app.className = ""; app.innerHTML = "";
+      app.appendChild(boundary("Onboarding", viewOnboarding));
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (h === "twin/new") {
+      site.hidden = true; app.hidden = false;
+      app.className = ""; app.innerHTML = "";
+      app.appendChild(boundary("Initialisation", viewInit));
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (h.startsWith("twin")) {
+      site.hidden = true; app.hidden = false;
+      app.className = "app";
+      mountApp("mytwin");
+      window.scrollTo(0, 0);
+      return;
+    }
+
     if (h.startsWith("app")) {
+      app.className = "app";
       const route = h.split("/")[1] || "overview";
       site.hidden = true; app.hidden = false;
       mountApp(VIEWS[route] ? route : "overview");
@@ -928,7 +988,7 @@
 
   function mountLanding() {
     const mounts = [
-      ["#hero-vis", heroRibbon],
+      ["#hero-vis", heroDiagram],
       ["#vis-cohort", cohortStrip],
       ["#vis-contrast", contrastPair],
       ["#vis-sim", landingSim],
@@ -947,6 +1007,488 @@
     if (a) { e.preventDefault(); go(a.getAttribute("data-go")); }
   });
   window.addEventListener("hashchange", render);
+
+  /* ============================================================
+     PRODUCT LAYER — profile store, onboarding, first-run twin.
+
+     A new user has ZERO observations. The filter has nothing to
+     update on, so their state initialises at the context prior
+     with maximum uncertainty — which is exactly what the model
+     does at t=0. We show that honestly rather than rendering a
+     trajectory that does not exist.
+     ============================================================ */
+
+  /** Prototype persistence. Shaped to mirror a future POST /api/twin so the
+      swap is one module, not a refactor. */
+  const Store = {
+    KEY: "studytwin.profile.v1",
+    read() {
+      try { return JSON.parse(localStorage.getItem(this.KEY) || "null"); }
+      catch (e) { return null; }
+    },
+    write(p) {
+      try { localStorage.setItem(this.KEY, JSON.stringify(p)); return true; }
+      catch (e) { console.warn("[StudyTwin] profile not persisted:", e); return false; }
+    },
+    clear() { try { localStorage.removeItem(this.KEY); } catch (e) { } },
+    blank() {
+      return {
+        v: 1, created: null, name: "", level: "", institution: "",
+        courses: [], baseline: { study_hours: 12, consistency: 3, workload: 3 },
+        consent: false, observations: 0,
+      };
+    },
+  };
+
+  /* ---------------------------------------------- hero diagram ---- */
+  /** The concept, not a chart: the twin shadows the student, then runs ahead.
+      Real trajectory, real simulated particles, zero chart furniture. */
+  function heroDiagram(host) {
+    const sim = D.sim, paths = (sim && sim.particles) || [];
+    const W = 760, H = 340, PAD = 16;
+    const nObs = st.eng.length, nFut = paths.length ? paths[0].length : 0;
+    const total = nObs + nFut;
+    const all = st.eng.concat(...paths.map((p) => p));
+    const lo = Math.min(theta, ...all) - .5, hi = Math.max(theta, ...all) + .5;
+    const X = (i) => PAD + (i / (total - 1)) * (W - PAD * 2);
+    const Y = (v) => H - PAD - ((v - lo) / (hi - lo)) * (H - PAD * 2);
+
+    const g = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+      "aria-label": "Diagram: a student's observed trajectory, the twin's belief tracking it with uncertainty, and a fan of simulated possible futures diverging from the present moment." });
+
+    const cTeal = css("--teal-2"), cInk = css("--ink"), cAmber = css("--amber"),
+          cIndigo = css("--indigo"), cInk3 = css("--ink-3");
+
+    // personal baseline — the only horizontal reference in the diagram
+    g.appendChild(s("line", { x1: PAD, x2: W - PAD, y1: Y(theta), y2: Y(theta),
+      stroke: cAmber, "stroke-width": 1.2, "stroke-dasharray": "6 5", opacity: .75 }));
+
+    // the twin's belief: an uncertainty envelope hugging the observed path
+    let band = "";
+    st.eng.forEach((m, i) => { band += (i ? " L " : "M ") + X(i) + " " + Y(m + 1.96 * st.eng_sd[i]); });
+    for (let i = nObs - 1; i >= 0; i--) band += " L " + X(i) + " " + Y(st.eng[i] - 1.96 * st.eng_sd[i]);
+    band += " Z";
+    g.appendChild(s("path", { d: band, fill: cTeal, "fill-opacity": .16 }));
+
+    // fan of real simulated futures
+    paths.forEach((p, k) => {
+      let d2 = "M " + X(nObs - 1) + " " + Y(st.eng[nObs - 1]);
+      p.forEach((v, i) => { d2 += " L " + X(nObs + i) + " " + Y(v); });
+      const path = s("path", { d: d2, fill: "none", stroke: cIndigo,
+        "stroke-width": 1, "stroke-opacity": .22, "stroke-linejoin": "round", class: "draw" });
+      g.appendChild(path);
+      requestAnimationFrame(() => {
+        try {
+          const L2 = path.getTotalLength();
+          path.style.setProperty("--len", L2);
+          path.style.animationDelay = (420 + k * 26) + "ms";
+        } catch (e) { }
+      });
+    });
+
+    // the observed student: solid, ending at the present
+    let obs = "";
+    st.eng.forEach((m, i) => { obs += (i ? " L " : "M ") + X(i) + " " + Y(m); });
+    const trace = s("path", { d: obs, fill: "none", stroke: cInk, "stroke-width": 2.1,
+      "stroke-linejoin": "round", "stroke-linecap": "round", class: "draw" });
+    g.appendChild(trace);
+    requestAnimationFrame(() => {
+      try { trace.style.setProperty("--len", trace.getTotalLength()); } catch (e) { }
+    });
+
+    // sparse observation marks — evidence, not a scatter plot
+    st.eng.forEach((m, i) => {
+      if (i % 3) return;
+      g.appendChild(s("circle", { cx: X(i), cy: Y(m), r: 2.2, fill: cInk,
+        "fill-opacity": .5, class: "fade" }));
+    });
+
+    // the present moment
+    const nx = X(nObs - 1), ny = Y(st.eng[nObs - 1]);
+    g.appendChild(s("line", { x1: nx, x2: nx, y1: PAD, y2: H - PAD,
+      stroke: cInk3, "stroke-width": 1, "stroke-dasharray": "2 4", opacity: .45 }));
+    g.appendChild(s("circle", { cx: nx, cy: ny, r: 9, fill: cTeal, "fill-opacity": .16, class: "fade" }));
+    g.appendChild(s("circle", { cx: nx, cy: ny, r: 4, fill: cTeal, class: "fade" }));
+
+    const lbl = (x, y, txt, col, anchor) => {
+      const t = s("text", { x: x, y: y, fill: col, "font-size": 10.5, "font-family": MONO,
+        "letter-spacing": ".1em", "text-anchor": anchor || "start", class: "fade" });
+      t.textContent = txt; g.appendChild(t);
+    };
+    lbl(PAD, Y(theta) - 8, "THEIR OWN NORMAL", cAmber);
+    lbl(nx - 10, PAD + 10, "NOW", cInk3, "end");
+    lbl(nx + 12, PAD + 10, "POSSIBLE FUTURES", cIndigo);
+    lbl(PAD, H - PAD + 2, "OBSERVED", cInk3);
+
+    host.appendChild(g);
+    host.appendChild(el("div", { class: "hf-caption" }, [
+      keyItem("observed history", cInk, false),
+      keyItem("the twin's belief, with uncertainty", cTeal, false, true),
+      keyItem("their own baseline", cAmber, true),
+      keyItem("24 simulated futures", cIndigo, false, true),
+    ]));
+  }
+  function keyItem(text, color, dashed, band) {
+    const i = el("i", { class: "hf-key" + (dashed ? " dash" : "") + (band ? " fan" : "") });
+    if (band) i.style.background = color; else i.style.borderTopColor = color;
+    return el("span", {}, [i, el("span", { text: text })]);
+  }
+
+  /* ================================================= onboarding ---- */
+  const STEPS = ["Welcome", "You", "Courses", "Your normal", "Privacy"];
+  let draft = null, obStep = 0;
+
+  const SUGGESTED = ["Machine Learning", "Databases", "Operating Systems",
+    "Computer Networks", "Algorithms", "Statistics", "Linear Algebra", "Compilers"];
+
+  function stepper(n) {
+    const wrap = el("div", { class: "stepper" });
+    STEPS.forEach((_, i) => wrap.appendChild(
+      el("i", { class: i === n ? "on" : (i < n ? "done" : "") })));
+    wrap.appendChild(el("span", { class: "stepper-txt",
+      text: "Step " + (n + 1) + " of " + STEPS.length }));
+    return wrap;
+  }
+
+  function obShell(inner) {
+    const root = el("div", { class: "ob" });
+    const top = el("div", { class: "ob-top" }, [
+      el("div", { class: "page ob-top-in" }, [
+        el("a", { class: "brand", href: "#", "data-go": "" }, [icon("twin", 20),
+          el("span", { text: "StudyTwin" })]),
+        stepper(obStep),
+      ]),
+    ]);
+    root.appendChild(top);
+    root.appendChild(el("div", { class: "ob-body" }, [el("div", { class: "ob-card" }, [inner])]));
+    return root;
+  }
+
+  function actions(nextLabel, onNext, opts) {
+    const o = opts || {};
+    const row = el("div", { class: "ob-actions" });
+    if (obStep > 0) {
+      const back = el("button", { type: "button", class: "btn btn-ghost", text: "Back" });
+      back.addEventListener("click", () => { obStep--; render(); });
+      row.appendChild(back);
+    }
+    row.appendChild(el("span", { class: "spacer" }));
+    if (o.secondary) {
+      const sec = el("a", { class: "link-btn", href: "#/app", "data-go": "app",
+        text: "Explore a demo twin instead" });
+      row.appendChild(sec);
+    }
+    const next = el("button", { type: "button", class: "btn btn-primary" }, [
+      el("span", { text: nextLabel }), icon("arrow", 16)]);
+    if (o.disabled) { next.disabled = true; next.style.opacity = .45; next.style.cursor = "not-allowed"; }
+    next.addEventListener("click", onNext);
+    row.appendChild(next);
+    return row;
+  }
+
+  function viewOnboarding() {
+    if (!draft) draft = Store.read() || Store.blank();
+
+    if (obStep === 0) {
+      return obShell(el("div", {}, [
+        el("p", { class: "ob-step-label", text: "Welcome" }),
+        el("h1", { text: "Let's build your Twin." }),
+        el("p", { class: "lede", html:
+          "StudyTwin learns what <em>your</em> normal looks like, tracks how that picture changes " +
+          "week to week, and lets you explore how the coming weeks could unfold." }),
+        el("div", { class: "note", style: "margin-bottom:1.5rem" }, [icon("info", 16),
+          el("div", { html: "<b>What to expect.</b> Your Twin starts with almost no information about " +
+            "you, so its first estimate is close to a typical student with wide uncertainty. It becomes " +
+            "genuinely personal only as weekly observations accumulate — we will show you exactly how " +
+            "far along it is." })]),
+        actions("Start", () => { obStep = 1; render(); }, { secondary: true }),
+      ]));
+    }
+
+    if (obStep === 1) {
+      const wrap = el("div", {}, [
+        el("p", { class: "ob-step-label", text: "About you" }),
+        el("h1", { text: "Who is the Twin for?" }),
+        el("p", { class: "lede", text: "Only what is useful. Nothing here is required to be your real name." }),
+      ]);
+      const f1 = el("div", { class: "field" }, [
+        el("label", { for: "ob-name", text: "Preferred name" }),
+        el("p", { class: "hint", text: "Shown in your dashboard. A nickname is fine." }),
+      ]);
+      const nameIn = el("input", { type: "text", id: "ob-name", value: draft.name,
+        placeholder: "e.g. Sid", autocomplete: "off" });
+      nameIn.addEventListener("input", (e) => { draft.name = e.target.value; });
+      f1.appendChild(nameIn);
+      wrap.appendChild(f1);
+
+      const row = el("div", { class: "field-row" });
+      const f2 = el("div", { class: "field" }, [el("label", { for: "ob-level", text: "Year of study" })]);
+      const sel = el("select", { id: "ob-level" });
+      ["", "1st year", "2nd year", "3rd year", "4th year", "Postgraduate"].forEach((v) => {
+        const o = el("option", { value: v, text: v || "Select…" });
+        if (v === draft.level) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener("change", (e) => { draft.level = e.target.value; });
+      f2.appendChild(sel); row.appendChild(f2);
+
+      const f3 = el("div", { class: "field" }, [el("label", { for: "ob-inst", text: "Institution" })]);
+      const inst = el("input", { type: "text", id: "ob-inst", value: draft.institution,
+        placeholder: "Optional", autocomplete: "off" });
+      inst.addEventListener("input", (e) => { draft.institution = e.target.value; });
+      f3.appendChild(inst); row.appendChild(f3);
+      wrap.appendChild(row);
+
+      wrap.appendChild(el("div", { class: "note" }, [icon("info", 16),
+        el("div", { html: "Stored on this device only. <b>None of these fields is used by the " +
+          "inference model</b> — the twin infers from behaviour over time, not from demographics." })]));
+      wrap.appendChild(actions("Continue", () => { obStep = 2; render(); }));
+      return obShell(wrap);
+    }
+
+    if (obStep === 2) {
+      const wrap = el("div", {}, [
+        el("p", { class: "ob-step-label", text: "Academic context" }),
+        el("h1", { text: "What are you studying this term?" }),
+        el("p", { class: "lede", text: "Each course becomes a context the Twin can track separately." }),
+      ]);
+      const chips = el("div", { class: "chips" });
+      const redraw = () => {
+        chips.innerHTML = "";
+        draft.courses.forEach((c, i) => {
+          const x = el("button", { type: "button", "aria-label": "Remove " + c, text: "×" });
+          x.addEventListener("click", () => { draft.courses.splice(i, 1); redraw(); });
+          chips.appendChild(el("span", { class: "chip-in" }, [el("span", { text: c }), x]));
+        });
+        if (!draft.courses.length) chips.appendChild(el("span", { class: "hint",
+          text: "No courses added yet." }));
+      };
+      redraw();
+      const f = el("div", { class: "field" }, [
+        el("label", { for: "ob-course", text: "Add a course" }),
+      ]);
+      const inp = el("input", { type: "text", id: "ob-course", placeholder: "Type and press Enter", autocomplete: "off" });
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && e.target.value.trim()) {
+          e.preventDefault();
+          if (draft.courses.length < 8) draft.courses.push(e.target.value.trim());
+          e.target.value = ""; redraw();
+        }
+      });
+      f.appendChild(inp);
+      const sug = el("div", { class: "chip-suggest" });
+      SUGGESTED.forEach((cName) => {
+        const b = el("button", { type: "button", text: "+ " + cName });
+        b.addEventListener("click", () => {
+          if (!draft.courses.includes(cName) && draft.courses.length < 8) {
+            draft.courses.push(cName); redraw();
+          }
+        });
+        sug.appendChild(b);
+      });
+      f.appendChild(sug);
+      wrap.appendChild(chips); wrap.appendChild(f);
+      wrap.appendChild(actions("Continue", () => { obStep = 3; render(); }));
+      return obShell(wrap);
+    }
+
+    if (obStep === 3) {
+      const wrap = el("div", {}, [
+        el("p", { class: "ob-step-label", text: "Personal baseline" }),
+        el("h1", { text: "Your normal is not everyone's normal." }),
+        el("p", { class: "lede", html:
+          "Twelve hours a week is an ordinary week for one student and a collapse for another. " +
+          "These answers give the Twin a starting point — they are <em>not</em> treated as truth." }),
+      ]);
+      const sliders = [
+        ["study_hours", "Typical study hours per week", 0, 40, 1, (v) => v + " h"],
+        ["consistency", "How consistent is your week-to-week study?", 1, 5, 1,
+          (v) => ["Very irregular", "Irregular", "Mixed", "Fairly steady", "Very steady"][v - 1]],
+        ["workload", "How heavy does this term feel right now?", 1, 5, 1,
+          (v) => ["Very light", "Light", "Manageable", "Heavy", "Very heavy"][v - 1]],
+      ];
+      sliders.forEach(([key, label, min, max, stepv, fmtv]) => {
+        const out = el("span", { class: "out", text: fmtv(draft.baseline[key]) });
+        const r = el("input", { type: "range", min: min, max: max, step: stepv,
+          value: draft.baseline[key], id: "sl-" + key });
+        r.addEventListener("input", (e) => {
+          draft.baseline[key] = +e.target.value;
+          out.textContent = fmtv(+e.target.value);
+        });
+        wrap.appendChild(el("div", { class: "slider-row" }, [
+          el("div", { class: "slider-head" }, [el("label", { for: "sl-" + key, text: label }), out]),
+          r,
+        ]));
+      });
+      wrap.appendChild(el("div", { class: "note" }, [icon("alert", 16),
+        el("div", { html: "<b>Where these actually go.</b> These are self-reported signals. The research " +
+          "schema defines a <code>self_report</code> channel for exactly this, and <b>no adapter supplies " +
+          "it yet</b> — so your answers are saved to your profile and are <b>not currently used by the " +
+          "inference model</b>. We would rather tell you that than imply a slider is steering a filter." })]));
+      wrap.appendChild(actions("Continue", () => { obStep = 4; render(); }));
+      return obShell(wrap);
+    }
+
+    // step 4 — privacy sits next to the commit action, not buried mid-flow
+    const wrap = el("div", {}, [
+      el("p", { class: "ob-step-label", text: "Privacy" }),
+      el("h1", { text: "What happens to this." }),
+      el("p", { class: "lede", text: "Short version: it stays in this browser." }),
+    ]);
+    [
+      ["What is stored", "Your name, year, institution, course list and the three baseline answers."],
+      ["Where it is stored", "In this browser's local storage. There is no server and no account. " +
+        "Clearing your browser data deletes it."],
+      ["What is shared", "Nothing. No analytics, no third parties, no network requests."],
+      ["What the model uses", "None of it, currently. The inference model learns from weekly " +
+        "behavioural observations, which this prototype cannot yet collect."],
+    ].forEach(([h, p]) => wrap.appendChild(
+      el("div", { class: "consent" }, [el("h3", { text: h }), el("p", { text: p })])));
+
+    wrap.appendChild(el("div", { class: "note" }, [icon("alert", 16),
+      el("div", { html: "<b>Prototype.</b> This is a research prototype, not a deployed service. " +
+        "Storage behaviour will change if it is ever connected to a backend." })]));
+
+    const chk = el("input", { type: "checkbox", id: "ob-consent" });
+    const next = actions("Create my Twin", () => {
+      draft.consent = true;
+      draft.created = new Date().toISOString();
+      draft.observations = 0;
+      Store.write(draft);
+      go("twin/new");
+    }, { disabled: true });
+    const btn = next.querySelector(".btn-primary");
+    if (draft.consent) { chk.checked = true; btn.disabled = false; btn.style.opacity = 1; btn.style.cursor = ""; }
+    chk.addEventListener("change", (e) => {
+      btn.disabled = !e.target.checked;
+      btn.style.opacity = e.target.checked ? 1 : .45;
+      btn.style.cursor = e.target.checked ? "" : "not-allowed";
+    });
+    wrap.appendChild(el("label", { class: "consent-check", for: "ob-consent" }, [chk,
+      el("span", { text: "I understand this is a prototype, my data stays on this device, and my Twin " +
+        "will have very wide uncertainty until observations accumulate." })]));
+    wrap.appendChild(next);
+    return obShell(wrap);
+  }
+
+  /* ------------------------------------------- initialisation ---- */
+  function viewInit() {
+    const p = Store.read() || Store.blank();
+    const root = el("div", { class: "ob" });
+    root.appendChild(el("div", { class: "ob-top" }, [el("div", { class: "page ob-top-in" }, [
+      el("span", { class: "brand" }, [icon("twin", 20), el("span", { text: "StudyTwin" })]),
+    ])]));
+    const card = el("div", {}, [
+      el("p", { class: "ob-step-label", text: "Initialising" }),
+      el("h1", { text: "Building your Twin." }),
+    ]);
+    const list = el("div", { class: "init-list" });
+    const rows = [
+      ["Profile stored", p.name ? "on this device" : "no name given", false],
+      ["Courses registered", p.courses.length + " course" + (p.courses.length === 1 ? "" : "s"), false],
+      ["Baseline answers saved", "not used by inference yet", true],
+      ["State initialised at the cohort prior", "no observations yet", false],
+      ["Uncertainty set to maximum", "nothing observed to narrow it", true],
+    ];
+    rows.forEach(([label, note, warn]) => {
+      list.appendChild(el("div", { class: "init-row" }, [
+        el("span", { class: "mark" }, [icon("shield", 16)]),
+        el("span", { text: label }),
+        el("span", { class: "st" + (warn ? " warn" : ""), text: note }),
+      ]));
+    });
+    card.appendChild(list);
+    const done = el("div", { style: "opacity:0;transition:opacity .4s ease" }, [
+      el("p", { class: "lede", style: "margin-bottom:1.5rem", html:
+        "<b>Your Twin has a starting point — not a history.</b> It currently knows what a typical " +
+        "student looks like and almost nothing about you specifically." }),
+    ]);
+    const cta = el("a", { class: "btn btn-primary", href: "#/twin", "data-go": "twin" }, [
+      el("span", { text: "Meet your Twin" }), icon("arrow", 16)]);
+    done.appendChild(cta);
+    card.appendChild(done);
+    root.appendChild(el("div", { class: "ob-body" }, [el("div", { class: "ob-card" }, [card])]));
+
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const items = list.querySelectorAll(".init-row");
+    if (reduce) {
+      items.forEach((n) => n.classList.add("on"));
+      done.style.opacity = 1;
+    } else {
+      items.forEach((n, i) => setTimeout(() => n.classList.add("on"), 180 + i * 260));
+      setTimeout(() => { done.style.opacity = 1; }, 180 + items.length * 260 + 220);
+    }
+    return root;
+  }
+
+  /* ------------------------------------------ the new user's twin ---- */
+  function viewTwinNew() {
+    const p = Store.read();
+    const v = el("div", { class: "view" });
+    if (!p) {
+      v.appendChild(emptyState("No Twin on this device",
+        "Nothing has been created here yet. <a href='#/onboarding' data-go='onboarding'>Create your Twin</a> " +
+        "or <a href='#/app' data-go='app'>explore the demo</a>."));
+      return v;
+    }
+
+    const learning = el("section", { class: "learning" }, [
+      el("h3", { text: (p.name ? p.name + ", your" : "Your") + " Twin is still learning." }),
+      el("p", { class: "why", html:
+        "It has <b>0 weekly observations</b>. Until behaviour accumulates, the state estimate is the " +
+        "cohort prior with maximum uncertainty — so there is no trajectory to plot, no deviation from " +
+        "your baseline to report, and no future worth simulating." }),
+    ]);
+    const pctDone = 0;
+    learning.appendChild(el("div", { class: "gauge" }, [
+      el("div", { class: "gauge-track" }, [
+        el("div", { class: "gauge-fill", style: "width:" + pctDone + "%" })]),
+      el("span", { class: "gauge-txt", text: "0 of 4 weeks before estimates stabilise" }),
+    ]));
+    const needs = el("div", { class: "need-list" });
+    [
+      ["Weekly activity observations — the model's primary input", "not yet collected"],
+      ["At least one assessment score, to identify the capability dimension", "not yet collected"],
+      ["About four weeks, before the personal baseline separates from the cohort", "not yet reached"],
+    ].forEach(([t, st2]) => needs.appendChild(el("div", { class: "need" }, [
+      icon("info", 15), el("div", { html: t + " — <span class='muted'>" + st2 + "</span>" })])));
+    learning.appendChild(needs);
+    learning.appendChild(el("div", { class: "note", style: "margin-top:1.5rem" }, [icon("alert", 16),
+      el("div", { html: "<b>This prototype has no observation pipeline.</b> There is no integration with " +
+        "an LMS, so no observations will arrive. Rather than fabricate them, the Twin stays honest about " +
+        "being empty. To see a fully-populated Twin, " +
+        "<a href='#/app' data-go='app'>open the demo</a>." })]));
+    v.appendChild(learning);
+
+    const prof = el("section", { class: "card" });
+    prof.appendChild(el("div", { class: "card-head" }, [el("div", {}, [
+      el("p", { class: "card-title", text: "What your Twin knows" }),
+      el("p", { class: "card-sub", text: "Stored on this device. Nothing here reaches the inference model yet." }),
+    ])]));
+    const tbl = el("table", { class: "data" });
+    const rows = [
+      ["Name", p.name || "—", "profile only"],
+      ["Year", p.level || "—", "profile only"],
+      ["Institution", p.institution || "—", "profile only"],
+      ["Courses", p.courses.length ? p.courses.join(", ") : "—", "would become contexts"],
+      ["Typical study hours", p.baseline.study_hours + " h/week", "self_report — unused"],
+      ["Consistency", String(p.baseline.consistency) + " / 5", "self_report — unused"],
+      ["Perceived workload", String(p.baseline.workload) + " / 5", "self_report — unused"],
+      ["Observations", "0", "required for inference"],
+    ];
+    tbl.innerHTML = "<thead><tr><th>Field</th><th>Value</th><th>Model use</th></tr></thead><tbody>" +
+      rows.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td class="muted">${r[2]}</td></tr>`).join("") +
+      "</tbody>";
+    prof.appendChild(tbl);
+    const reset = el("button", { type: "button", class: "link-btn",
+      style: "margin-top:1rem;display:inline-block", text: "Delete this Twin from my device" });
+    reset.addEventListener("click", () => {
+      Store.clear(); draft = null; obStep = 0; go("");
+    });
+    prof.appendChild(reset);
+    v.appendChild(prof);
+    return v;
+  }
 
   // fill live figures into the marketing copy so it can never drift from the data
   document.querySelectorAll("[data-fig]").forEach((n) => {

@@ -89,6 +89,14 @@ def main() -> int:
     aq = alt.state_quantiles((0.05, 0.5, 0.95))
     pp = r.person_period[r.person_period["student_id"] == sid]
 
+    # A sample of INDIVIDUAL simulated particle paths, for the hero diagram's
+    # fan of possible futures. Real trajectories, not paths interpolated between
+    # quantiles - a fan drawn from interpolation would be a picture of a band
+    # pretending to be a set of outcomes.
+    rng_pick = np.random.default_rng(cfg.seed)
+    idx = rng_pick.choice(base.states.shape[0], size=min(24, base.states.shape[0]), replace=False)
+    particle_paths = [[round(float(v), 4) for v in base.states[i, :, 0]] for i in idx]
+
     att = explain_trajectory(tr, r.params, dim=0).fillna(0)
 
     payload = {
@@ -124,6 +132,7 @@ def main() -> int:
             "alt_lo": [round(float(x), 4) for x in aq["engagement_q05"]],
             "alt_hi": [round(float(x), 4) for x in aq["engagement_q95"]],
             "base_risk": [round(float(x), 4) for x in base.cumulative_risk()],
+            "particles": particle_paths,
             "alt_risk": [round(float(x), 4) for x in alt.cumulative_risk()],
         },
         "attrib": [

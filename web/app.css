@@ -1,5 +1,12 @@
 /* ============================================================
    StudyTwin design system
+
+   COMMITTED LIGHT IDENTITY.
+   This product deliberately has one visual world: warm ivory ground,
+   deep charcoal ink. There is no automatic dark swap. An earlier
+   version inherited the OS preference, which meant half of viewers
+   saw a different product than the one that was designed - and a
+   research instrument should look the same to everyone reading it.
    ------------------------------------------------------------
    Colour is semantic, never decorative:
      teal    observed data, current state, primary action
@@ -51,30 +58,6 @@
   --page: min(100% - 2.5rem, 76rem);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg:#0F1214; --surface:#171A1D; --surface-2:#1D2124; --surface-3:#242A2E;
-    --ink:#E5E8EA; --ink-2:#B4BCC1; --ink-3:#828C93;
-    --line:#282E32; --line-2:#212629;
-    --teal:#3F9E93; --teal-2:#54B0A5; --teal-3:#16302D;
-    --indigo:#7C8AE0; --indigo-2:#1E2340;
-    --amber:#C8913F; --amber-2:#2E2415;
-    --rose:#C1666F; --rose-2:#2E1C1E;
-    --shadow: 0 1px 2px rgba(0,0,0,.3);
-    --shadow-lg: 0 2px 4px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.3);
-  }
-}
-:root[data-theme="dark"] {
-  --bg:#0F1214; --surface:#171A1D; --surface-2:#1D2124; --surface-3:#242A2E;
-  --ink:#E5E8EA; --ink-2:#B4BCC1; --ink-3:#828C93;
-  --line:#282E32; --line-2:#212629;
-  --teal:#3F9E93; --teal-2:#54B0A5; --teal-3:#16302D;
-  --indigo:#7C8AE0; --indigo-2:#1E2340;
-  --amber:#C8913F; --amber-2:#2E2415;
-  --rose:#C1666F; --rose-2:#2E1C1E;
-  --shadow: 0 1px 2px rgba(0,0,0,.3);
-  --shadow-lg: 0 2px 4px rgba(0,0,0,.35), 0 12px 32px rgba(0,0,0,.3);
-}
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -140,7 +123,6 @@ p { margin: 0 0 var(--s4); max-width: 62ch; }
 }
 .btn-primary { background: var(--teal); color: #fff; }
 .btn-primary:hover { background: #0B4A45; }
-:root[data-theme="dark"] .btn-primary, :root:not([data-theme="light"]) .btn-primary { color: #0B1012; }
 .btn-ghost { border: 1px solid var(--line); background: var(--surface); }
 .btn-ghost:hover { border-color: var(--ink-3); }
 .btn:active { transform: translateY(1px); }
@@ -399,4 +381,123 @@ table.data tr.hl td { background: var(--teal-3); }
   .pipe-vs { justify-self: start; }
   .prop { grid-template-columns: 2.4rem 1fr; }
   .prop > p:last-child { grid-column: 2; }
+}
+
+/* ============================================================
+   HERO DIAGRAM
+   Not a chart. Axes, gridlines and numbers are deliberately
+   absent: this is a diagram of the concept, drawn with real
+   data. The twin shadows the student, then runs ahead.
+   ============================================================ */
+.hero-figure { position: relative; padding: var(--s5) 0 0; }
+.hero-figure svg { width: 100%; height: auto; overflow: visible; }
+.hf-caption { display: flex; gap: var(--s5); flex-wrap: wrap; margin-top: var(--s4);
+  font-size: .78rem; color: var(--ink-3); }
+.hf-caption span { display: flex; align-items: center; gap: .45rem; }
+.hf-key { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+.hf-key.dash { border-top-style: dashed; }
+.hf-key.fan { height: 10px; border: none; border-radius: 2px; background: var(--indigo); opacity: .28; }
+
+/* ------------------------------------------------ stepper ---- */
+.ob { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; background: var(--bg); }
+.ob-top { border-bottom: 1px solid var(--line); background: var(--surface); }
+.ob-top-in { display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
+  height: 62px; }
+.ob-body { display: grid; place-items: start center; padding: var(--s7) var(--s4) var(--s8); }
+.ob-card { width: min(100%, 42rem); }
+.ob-step-label { font-family: var(--mono); font-size: .66rem; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--ink-3); margin: 0 0 var(--s3); }
+.ob h1 { font-family: var(--serif); font-size: clamp(1.9rem, 4vw, 2.6rem); font-weight: 700;
+  letter-spacing: -.024em; line-height: 1.1; margin: 0 0 var(--s4); text-wrap: balance; }
+.ob .lede { margin-bottom: var(--s6); }
+
+.stepper { display: flex; gap: .4rem; align-items: center; }
+.stepper i { width: 26px; height: 3px; border-radius: 2px; background: var(--line);
+  display: block; transition: background .25s ease; }
+.stepper i.on { background: var(--teal); }
+.stepper i.done { background: var(--teal-2); }
+.stepper-txt { font-family: var(--mono); font-size: .68rem; color: var(--ink-3); margin-left: .5rem; }
+
+.ob-actions { display: flex; gap: var(--s3); align-items: center; margin-top: var(--s6);
+  flex-wrap: wrap; }
+.ob-actions .spacer { flex: 1; }
+.link-btn { font-size: .88rem; color: var(--ink-3); text-decoration: underline;
+  text-underline-offset: .25em; }
+.link-btn:hover { color: var(--ink); }
+
+/* --------------------------------------------------- form ---- */
+.field { margin-bottom: var(--s5); }
+.field > label { display: block; font-size: .88rem; font-weight: 600; margin-bottom: .3rem; }
+.field .hint { font-size: .8rem; color: var(--ink-3); margin: 0 0 .5rem; }
+.field input[type=text], .field select {
+  width: 100%; padding: .62rem .8rem; font: inherit; font-size: .95rem;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink); transition: border-color .15s ease;
+}
+.field input[type=text]:hover, .field select:hover { border-color: var(--ink-3); }
+.field input[type=text]:focus-visible, .field select:focus-visible { border-color: var(--teal-2); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s4); }
+
+.chips { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: var(--s3); }
+.chip-in { display: inline-flex; align-items: center; gap: .4rem; padding: .34rem .6rem;
+  border: 1px solid var(--teal-2); background: var(--teal-3); color: var(--teal);
+  border-radius: var(--r-md); font-size: .85rem; }
+.chip-in button { color: var(--teal); opacity: .65; line-height: 1; font-size: 1rem; padding: 0 .1rem; }
+.chip-in button:hover { opacity: 1; }
+.chip-suggest { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
+.chip-suggest button { padding: .3rem .55rem; border: 1px dashed var(--line);
+  border-radius: var(--r-md); font-size: .82rem; color: var(--ink-3); }
+.chip-suggest button:hover { border-color: var(--teal-2); color: var(--teal); border-style: solid; }
+
+.slider-row { margin-bottom: var(--s5); }
+.slider-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3); }
+.slider-head label { font-size: .9rem; font-weight: 600; }
+.slider-head .out { font-family: var(--mono); font-size: .9rem; color: var(--teal);
+  font-variant-numeric: tabular-nums; }
+.slider-row input[type=range] { width: 100%; accent-color: var(--teal); margin-top: .4rem; }
+.slider-row .hint { font-size: .78rem; color: var(--ink-3); margin: .1rem 0 0; }
+
+.consent { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface);
+  padding: var(--s4) var(--s5); margin-bottom: var(--s4); }
+.consent h3 { font-size: .92rem; margin-bottom: .35rem; }
+.consent p { font-size: .86rem; color: var(--ink-2); margin: 0; }
+.consent-check { display: flex; gap: .7rem; align-items: flex-start; margin-top: var(--s4);
+  font-size: .92rem; }
+.consent-check input { margin-top: .25rem; accent-color: var(--teal); width: 17px; height: 17px; }
+
+/* ------------------------------------------ initialisation ---- */
+.init-list { display: grid; gap: .1rem; margin: var(--s5) 0; }
+.init-row { display: grid; grid-template-columns: 1.4rem 1fr auto; gap: .8rem;
+  align-items: center; padding: .6rem 0; border-bottom: 1px solid var(--line-2);
+  font-size: .92rem; opacity: .35; transition: opacity .35s ease; }
+.init-row.on { opacity: 1; }
+.init-row .mark { color: var(--teal); }
+.init-row .st { font-family: var(--mono); font-size: .72rem; color: var(--ink-3); }
+.init-row .st.warn { color: var(--amber); }
+
+/* ------------------------------------- insufficient data ---- */
+.learning { border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--surface); padding: var(--s6); }
+.learning h3 { font-family: var(--serif); font-size: 1.35rem; font-weight: 700;
+  letter-spacing: -.018em; margin-bottom: var(--s3); }
+.learning .why { max-width: 58ch; color: var(--ink-2); font-size: .95rem; }
+.gauge { display: flex; align-items: center; gap: var(--s4); margin: var(--s5) 0; }
+.gauge-track { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.gauge-fill { height: 100%; background: var(--teal-2); border-radius: 3px; }
+.gauge-txt { font-family: var(--mono); font-size: .8rem; color: var(--ink-3); white-space: nowrap; }
+.need-list { display: grid; gap: .55rem; margin-top: var(--s5); }
+.need { display: grid; grid-template-columns: 1.2rem 1fr; gap: .7rem; font-size: .9rem;
+  color: var(--ink-2); align-items: start; }
+.need svg { color: var(--ink-3); margin-top: .15rem; }
+
+.mode-banner { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap;
+  padding: .55rem var(--s5); border-bottom: 1px solid var(--line);
+  background: var(--amber-2); font-size: .84rem; color: var(--ink-2); }
+.mode-banner b { color: var(--ink); }
+.mode-banner .spacer { flex: 1; }
+
+@media (max-width: 700px) {
+  .field-row { grid-template-columns: 1fr; }
+  .ob-body { padding: var(--s5) var(--s3) var(--s7); }
+  .hf-caption { gap: var(--s3); font-size: .74rem; }
 }
