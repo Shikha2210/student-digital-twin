@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "student-twin"
+version = "0.1.0"
+description = "Context-adaptive student digital twin: a latent-state model with recursive updating, generative simulation, and an explicit intervention interface."
+requires-python = ">=3.11"
+
+# Deliberately small. Every dependency here is used by the core pipeline.
+# See docs/assumptions.md for why pydantic, PyYAML, lightgbm and pymc are absent.
+dependencies = [
+    "numpy>=2.0,<3",
+    "pandas>=2.2,<3",
+    "scipy>=1.13,<2",
+    "scikit-learn>=1.5,<2",
+]
+
+[project.optional-dependencies]
+dashboard = ["streamlit>=1.40", "matplotlib>=3.9"]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: takes more than a few seconds",
+    "requires_oulad: needs real OULAD CSVs in data/raw/oulad",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

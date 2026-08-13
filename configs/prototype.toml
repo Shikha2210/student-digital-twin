@@ -1,0 +1,34 @@
+# Prototype run configuration.
+# Every field here is recorded in the run manifest, so a result can always be
+# traced back to the settings that produced it.
+
+[run]
+seed = 20260813
+run_name = "prototype"
+data_root = "data"
+
+[state]
+# Gate 1 constraint: 2 by default, 3 maximum. Values outside that range are
+# rejected by StateConfig, not merely discouraged.
+n_dims = 2
+dim_names = ["engagement", "capability"]
+alpha_init = [0.30, 0.20]
+process_noise_init = [0.25, 0.15]
+initial_state_variance = 1.0
+setpoint_shrinkage = 4.0
+max_newton_iters = 25
+
+[features]
+baseline_window = 4
+min_history = 2
+trend_window = 3
+
+[simulation]
+n_particles = 500
+horizon_weeks = 8
+quantiles = [0.05, 0.25, 0.50, 0.75, 0.95]
+
+[evaluation]
+calibration_bins = 10
+forward_chained = true
+min_train_weeks = 3
