@@ -183,7 +183,10 @@
     // personal baseline: a first-class mark, not a gridline
     g.appendChild(s("line", { x1: x0, x2: x1, y1: Y(theta), y2: Y(theta),
       stroke: cAmber, "stroke-width": 1.5, "stroke-dasharray": "5 4" }));
-    const tl = s("text", { x: x1 + 6, y: Y(theta) + 3.5, fill: cAmber, "font-size": 10, "font-family": MONO });
+    const tl = s("text", {
+      x: opts.dots ? x1 - 6 : x1 + 6, y: Y(theta) - 6,
+      fill: cAmber, "font-size": 10, "font-family": MONO,
+      "text-anchor": opts.dots ? "end" : "start" });
     tl.textContent = "θ " + fmt(theta);
     g.appendChild(tl);
 
@@ -1150,7 +1153,7 @@
      makes no quantitative claim.
      ============================================================ */
   function twinCore(host) {
-    const W = 780, H = 500, CX = 390, CY = 250;
+    const W = 820, H = 430, CX = 400, CY = 215;
     const sim = D.sim, particles = (sim && sim.particles) || [];
     const nObs = st.eng.length;
 
@@ -1168,9 +1171,9 @@
           gCore = layer("state"), gFut = layer("futures");
 
     /* ---- personal baseline: one horizontal rule through everything ---- */
-    gBase.appendChild(s("line", { x1: 26, x2: W - 26, y1: CY, y2: CY,
+    gBase.appendChild(s("line", { x1: 24, x2: W - 24, y1: CY, y2: CY,
       stroke: cAmber, "stroke-width": 1.3, "stroke-dasharray": "7 6", opacity: .85 }));
-    const bl = s("text", { x: 26, y: CY - 12, fill: cAmber, "font-size": 10.5,
+    const bl = s("text", { x: 24, y: CY - 11, fill: cAmber, "font-size": 10.5,
       "font-family": MONO, "letter-spacing": ".14em" });
     bl.textContent = "PERSONAL BASELINE";
     gBase.appendChild(bl);
@@ -1180,39 +1183,40 @@
     const engMin = Math.min(...st.eng);
     for (let i = 0; i < nObs; i++) {
       const f = i / (nObs - 1);
-      const x = 44 + f * 250;
-      const spread = (1 - f) * 108;
-      const norm = (st.eng[i] - engMin) / engRange - .5;
-      const y = CY + norm * 2 * spread;
-      const o = .18 + f * .5;
-      gObs.appendChild(s("line", { x1: x, y1: y, x2: CX - 96, y2: CY,
-        stroke: cInk3, "stroke-width": .7, "stroke-opacity": o * .5 }));
-      const dot = s("circle", { cx: x, cy: y, r: 2 + f * 1.6, fill: cInk,
+      const x = 30 + f * 268;
+      const spread = (1 - f) * 128 + 12;
+      const even = ((i % 2 ? 1 : -1) * (0.35 + 0.65 * ((i * 7) % 5) / 4));
+      const wob = ((st.eng[i] - engMin) / engRange - .5) * .5;
+      const y = CY + (even * 0.72 + wob) * spread;
+      const o = .3 + f * .55;
+      gObs.appendChild(s("line", { x1: x, y1: y, x2: CX - 86, y2: CY,
+        stroke: cTeal2, "stroke-width": .9, "stroke-opacity": o * .38 }));
+      const dot = s("circle", { cx: x, cy: y, r: 3 + f * 2.4, fill: cInk,
         "fill-opacity": o, class: "tc-in" });
       dot.style.animationDelay = (i * 34) + "ms";
       gObs.appendChild(dot);
     }
-    const ol = s("text", { x: 44, y: H - 44, fill: cInk3, "font-size": 10.5,
+    const ol = s("text", { x: 30, y: 22, fill: cInk3, "font-size": 10.5,
       "font-family": MONO, "letter-spacing": ".14em" });
     ol.textContent = "LEARNING OBSERVATIONS";
     gObs.appendChild(ol);
 
     /* ---- centre: the state and its uncertainty ---- */
-    [96, 68, 44].forEach((r, i) => {
+    [104, 76, 50].forEach((r, i) => {
       const ring = s("circle", { cx: CX, cy: CY, r: r, fill: "none", stroke: cTeal2,
-        "stroke-width": 1, "stroke-opacity": .16 + i * .1, class: "tc-ring" });
+        "stroke-width": 1, "stroke-opacity": .2 + i * .13, class: "tc-ring" });
       ring.style.animationDelay = (620 + i * 110) + "ms";
       gCore.appendChild(ring);
     });
-    gCore.appendChild(s("circle", { cx: CX, cy: CY, r: 44, fill: cTeal2,
-      "fill-opacity": .07, class: "tc-ring" }));
-    const core = s("circle", { cx: CX, cy: CY, r: 9, fill: cTeal, class: "tc-core" });
+    gCore.appendChild(s("circle", { cx: CX, cy: CY, r: 50, fill: cTeal2,
+      "fill-opacity": .09, class: "tc-ring" }));
+    const core = s("circle", { cx: CX, cy: CY, r: 11, fill: cTeal, class: "tc-core" });
     gCore.appendChild(core);
-    const cl = s("text", { x: CX, y: CY + 122, fill: cTeal, "font-size": 10.5,
+    const cl = s("text", { x: CX, y: CY + 118, fill: cTeal, "font-size": 10.5,
       "font-family": MONO, "letter-spacing": ".14em", "text-anchor": "middle" });
     cl.textContent = "ESTIMATED STATE";
     gCore.appendChild(cl);
-    const ul = s("text", { x: CX, y: CY - 108, fill: cTeal2, "font-size": 10,
+    const ul = s("text", { x: CX, y: CY - 104, fill: cTeal2, "font-size": 10,
       "font-family": MONO, "letter-spacing": ".12em", "text-anchor": "middle", opacity: .8 });
     ul.textContent = "UNCERTAINTY";
     gCore.appendChild(ul);
@@ -1224,20 +1228,18 @@
     const eMin = Math.min(...ends), eMax = Math.max(...ends), eR = (eMax - eMin) || 1;
     ends.forEach((v, k) => {
       const norm = (v - eMin) / eR - .5;
-      const x2 = W - 52, y2 = CY + norm * 224;
-      const cx1 = CX + 96, cy1 = CY, cx2 = x2 - 110, cy2 = y2;
+      const x2 = W - 34, y2 = CY + norm * 200;
+      const cx1 = CX + 104, cy1 = CY, cx2 = x2 - 120, cy2 = y2;
       const path = s("path", {
         d: `M ${CX + 12} ${CY} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`,
-        fill: "none", stroke: cIndigo, "stroke-width": 1,
-        "stroke-opacity": .3, class: "tc-fut" });
+        fill: "none", stroke: cIndigo, "stroke-width": 1.1,
+        "stroke-opacity": .34, class: "tc-fut" });
       path.style.animationDelay = (900 + k * 22) + "ms";
       gFut.appendChild(path);
-      const e = s("circle", { cx: x2, cy: y2, r: 2.2, fill: cIndigo,
-        "fill-opacity": .5, class: "tc-in" });
-      e.style.animationDelay = (1200 + k * 22) + "ms";
-      gFut.appendChild(e);
+      // no endpoint markers: a vertical column of dots at the canvas edge read
+      // as an artefact rather than as outcomes
     });
-    const fl = s("text", { x: W - 52, y: H - 44, fill: cIndigo, "font-size": 10.5,
+    const fl = s("text", { x: W - 30, y: 22, fill: cIndigo, "font-size": 10.5,
       "font-family": MONO, "letter-spacing": ".14em", "text-anchor": "end" });
     fl.textContent = "POSSIBLE FUTURES";
     gFut.appendChild(fl);
@@ -1246,11 +1248,11 @@
 
     /* ---- hover zones: reveal what each layer is ---- */
     const ZONES = [
-      { name: "observations", x: 0, w: 300, title: "Learning observations",
+      { name: "observations", x: 0, w: 318, title: "Learning observations",
         body: "Weekly activity, submissions and scores. Evidence arriving over time." },
-      { name: "state", x: 300, w: 180, title: "The estimated state",
+      { name: "state", x: 318, w: 186, title: "The estimated state",
         body: "One belief about where this student is now — with its uncertainty around it." },
-      { name: "futures", x: 480, w: 300, title: "Possible futures",
+      { name: "futures", x: 504, w: 316, title: "Possible futures",
         body: "The state run forward many times. A distribution, not a prediction." },
     ];
     const tip = el("div", { class: "tc-tip" }, [
