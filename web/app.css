@@ -501,3 +501,86 @@ table.data tr.hl td { background: var(--teal-3); }
   .ob-body { padding: var(--s5) var(--s3) var(--s7); }
   .hf-caption { gap: var(--s3); font-size: .74rem; }
 }
+
+/* ============================================================
+   THE TWIN CORE — hero composition.
+   Observations converge, a state forms, futures diverge.
+   Motion runs once on load and then rests; nothing loops.
+   ============================================================ */
+.twin-core { width: 100%; height: auto; overflow: visible; }
+.tc-zone { cursor: default; }
+.tc-zone:focus-visible { outline: 2px solid var(--teal-2); outline-offset: -4px; }
+.tc-layer { transition: opacity .3s ease; }
+.twin-core[data-focus] .tc-layer { opacity: .22; }
+.twin-core[data-focus="observations"] [data-layer="observations"],
+.twin-core[data-focus="state"] [data-layer="state"],
+.twin-core[data-focus="state"] [data-layer="baseline"],
+.twin-core[data-focus="futures"] [data-layer="futures"] { opacity: 1; }
+
+.tc-in { opacity: 0; animation: tcIn .5s cubic-bezier(.22,.61,.36,1) forwards; }
+@keyframes tcIn { to { opacity: 1; } }
+.tc-ring { transform-origin: center; opacity: 0; animation: tcRing .8s cubic-bezier(.22,.61,.36,1) forwards; }
+@keyframes tcRing { from { opacity: 0; transform: scale(.82); } to { opacity: 1; transform: scale(1); } }
+.tc-core { opacity: 0; animation: tcIn .6s ease 560ms forwards; }
+.tc-fut { stroke-dasharray: 460; stroke-dashoffset: 460;
+  animation: tcDraw 1.1s cubic-bezier(.22,.61,.36,1) forwards; }
+@keyframes tcDraw { to { stroke-dashoffset: 0; } }
+
+.tc-tip { margin-top: var(--s4); min-height: 3.4rem; }
+.tc-tip-t { font-size: .96rem; font-weight: 650; margin: 0 0 .15rem; letter-spacing: -.01em; }
+.tc-tip-b { font-size: .87rem; color: var(--ink-3); margin: 0; max-width: 46ch; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tc-in, .tc-ring, .tc-core { animation: none; opacity: 1; transform: none; }
+  .tc-fut { animation: none; stroke-dashoffset: 0; }
+}
+
+/* ------------------------------------ how the twin thinks ---- */
+.stage-wrap { display: grid; grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr);
+  gap: var(--s7); align-items: start; margin-top: var(--s6); }
+.stage-rail { display: grid; gap: 0; }
+.stage-btn { display: grid; grid-template-columns: 2.4rem 1fr; gap: .2rem var(--s3);
+  text-align: left; padding: var(--s4) var(--s3); border-radius: var(--r-md);
+  border-left: 2px solid var(--line); transition: border-color .2s ease, background .2s ease; }
+.stage-btn:hover { background: var(--surface-2); }
+.stage-btn[aria-selected="true"] { border-left-color: var(--teal); background: var(--surface); }
+.stage-n { font-family: var(--mono); font-size: .7rem; color: var(--ink-3); grid-row: 1; }
+.stage-btn[aria-selected="true"] .stage-n { color: var(--teal); }
+.stage-name { font-family: var(--serif); font-size: 1.18rem; font-weight: 700;
+  letter-spacing: -.015em; grid-row: 1; }
+.stage-d { grid-column: 2; font-size: .88rem; color: var(--ink-2); max-width: 40ch; }
+.stage-vis { background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: var(--s5); }
+.stage-vis svg { width: 100%; height: auto; }
+.stage-note { font-size: .87rem; color: var(--ink-3); margin: var(--s4) 0 0;
+  padding-left: var(--s4); border-left: 2px solid var(--amber); max-width: 52ch; }
+
+/* ------------------------------------------ knows / doesn't ---- */
+.knows { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s6); margin-top: var(--s6); }
+.knows-col h3 { font-family: var(--mono); font-size: .66rem; letter-spacing: .13em;
+  text-transform: uppercase; margin-bottom: var(--s4); font-weight: 400; }
+.knows-col.yes h3 { color: var(--teal); }
+.knows-col.no h3 { color: var(--amber); }
+.knows-list { display: grid; gap: 0; }
+.knows-item { display: grid; grid-template-columns: 1.1rem 1fr; gap: .75rem;
+  padding: var(--s3) 0; border-bottom: 1px solid var(--line-2); align-items: start;
+  font-size: .93rem; }
+.knows-item:last-child { border-bottom: none; }
+.knows-item svg { margin-top: .18rem; }
+.knows-col.yes svg { color: var(--teal); }
+.knows-col.no svg { color: var(--amber); }
+.knows-item span.sub { display: block; font-size: .82rem; color: var(--ink-3); margin-top: .1rem; }
+
+/* -------------------------------------- onboarding, richer ---- */
+.ob-split { display: grid; grid-template-columns: 320px minmax(0,1fr); gap: var(--s7);
+  align-items: start; width: min(100%, 60rem); }
+.ob-aside { position: sticky; top: var(--s5); }
+.ob-twin { width: 100%; height: auto; }
+.ob-twin-cap { font-size: .82rem; color: var(--ink-3); margin: var(--s4) 0 0;
+  text-align: center; max-width: 30ch; margin-inline: auto; }
+@media (max-width: 900px) {
+  .stage-wrap { grid-template-columns: 1fr; gap: var(--s5); }
+  .knows { grid-template-columns: 1fr; gap: var(--s5); }
+  .ob-split { grid-template-columns: 1fr; gap: var(--s5); }
+  .ob-aside { position: static; max-width: 15rem; margin-inline: auto; }
+}

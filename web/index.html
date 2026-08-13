@@ -18,10 +18,9 @@
         StudyTwin
       </a>
       <nav class="nav-links" aria-label="Primary">
-        <a href="#question">The question</a>
+        <a href="#how">How it thinks</a>
         <a href="#baseline">Personal baseline</a>
         <a href="#futures">Futures</a>
-        <a href="#properties">Definition</a>
         <a href="#rigour">Research</a>
       </nav>
       <a class="btn btn-primary" href="#/onboarding" data-go="onboarding">
@@ -63,6 +62,17 @@
         <div id="hero-vis"></div>
       </div>
     </div>
+  </section>
+
+
+  <!-- ============================ HOW IT THINKS ============================ -->
+  <section class="sec page" id="how">
+    <div class="sec-narrow">
+      <p class="eyebrow">How the Twin thinks</p>
+      <h2 class="sec">Four moves, repeated every week.</h2>
+      <p class="lede">Select a stage. The diagram shows what changes.</p>
+    </div>
+    <div id="vis-think"></div>
   </section>
 
   <!-- ============================ THE QUESTION ============================ -->
@@ -284,22 +294,42 @@
     </div>
   </section>
 
-  <!-- ============================ LIMITATIONS ============================ -->
-  <section class="sec page">
-    <div class="honest">
+  <!-- ============================ KNOWS / DOESN'T ============================ -->
+  <section class="sec page" id="limits">
+    <div class="sec-narrow">
       <p class="eyebrow">Scientific restraint</p>
-      <h2 class="sec" style="font-size:1.6rem">The limitations are part of the product.</h2>
-      <p style="margin-bottom:0">
-        An instrument that hides its failures is not an instrument. These appear inside the application
-        itself, beside the charts they qualify — not only in a paper:
-      </p>
-      <ul>
-        <li><b>Nothing has run on real student data.</b> Every figure on this site comes from a synthetic cohort with known ground truth. The OULAD dataset is prepared but has not been processed.</li>
-        <li><b>Interventions are not causal estimates.</b> No interventions are recorded anywhere in the data, so the sensitivity is assumed. Scenarios say what the model implies, never what an action would do.</li>
-        <li><b>Uncertainty is currently under-stated.</b> Nominal 95% intervals cover about 81% of true states. The interface says so beside the chart rather than quietly widening the band.</li>
-        <li><b>Two capability tests are unwritten</b>, so the latent dimensions are labels of convenience rather than validated constructs.</li>
-        <li><b>A simpler model sometimes wins.</b> Where risk is driven by fast week-to-week change, plain logistic regression on hand-built features outperforms the twin — and we publish that number alongside our own.</li>
-      </ul>
+      <h2 class="sec">What the Twin knows, and what it doesn't know yet.</h2>
+      <p class="lede">Both columns appear inside the product too, beside the charts they qualify.</p>
+    </div>
+    <div class="knows">
+      <div class="knows-col yes">
+        <h3>Validated</h3>
+        <div class="knows-list">
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+            <div>Personal baseline estimation<span class="sub">Set-point recovery r = 0.94 against known ground truth</span></div></div>
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+            <div>Longitudinal state estimation<span class="sub">State recovery r = 0.93; test T1 passes to 0.00e+00</span></div></div>
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+            <div>Generative simulation<span class="sub">Test T2 passes: 90% band covers 89.6% of held-out observations</span></div></div>
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+            <div>Absence of leakage<span class="sub">Identity permutation collapses to chance, as required</span></div></div>
+        </div>
+      </div>
+      <div class="knows-col no">
+        <h3>Not yet validated</h3>
+        <div class="knows-list">
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v7M12 17.2h.01"/><circle cx="12" cy="12" r="9"/></svg>
+            <div>Real student data<span class="sub">Every figure here is synthetic. OULAD is prepared but unprocessed</span></div></div>
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v7M12 17.2h.01"/><circle cx="12" cy="12" r="9"/></svg>
+            <div>Causal intervention effects<span class="sub">No interventions exist in the data; sensitivities are assumed</span></div></div>
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v7M12 17.2h.01"/><circle cx="12" cy="12" r="9"/></svg>
+            <div>Full uncertainty calibration<span class="sub">Nominal 95% intervals cover about 81% — over-confident</span></div></div>
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v7M12 17.2h.01"/><circle cx="12" cy="12" r="9"/></svg>
+            <div>Named latent constructs<span class="sub">Test T4 unwritten, so the dimension names are conventions</span></div></div>
+          <div class="knows-item"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v7M12 17.2h.01"/><circle cx="12" cy="12" r="9"/></svg>
+            <div>Physiological sensing<span class="sub">Out of scope. Declared in the schema, supplied by nobody</span></div></div>
+        </div>
+      </div>
     </div>
   </section>
 

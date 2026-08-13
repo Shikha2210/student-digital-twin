@@ -988,7 +988,8 @@
 
   function mountLanding() {
     const mounts = [
-      ["#hero-vis", heroDiagram],
+      ["#hero-vis", twinCore],
+      ["#vis-think", thinkSection],
       ["#vis-cohort", cohortStrip],
       ["#vis-contrast", contrastPair],
       ["#vis-sim", landingSim],
@@ -1134,6 +1135,309 @@
     return el("span", {}, [i, el("span", { text: text })]);
   }
 
+  /* ============================================================
+     THE TWIN CORE — the landing hero.
+
+     Not a chart. The form is the argument: many observations
+     CONVERGE into one state, which then DIVERGES into many
+     futures. A lens, not a plot. That shape is literally what
+     the model does, so the composition carries the concept
+     before a single word is read.
+
+     Proportions are grounded in real pipeline output (observation
+     count, posterior spread, real particle endpoints) so nothing
+     here is arbitrary decoration — but it carries no axes and
+     makes no quantitative claim.
+     ============================================================ */
+  function twinCore(host) {
+    const W = 780, H = 500, CX = 390, CY = 250;
+    const sim = D.sim, particles = (sim && sim.particles) || [];
+    const nObs = st.eng.length;
+
+    const g = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "twin-core",
+      role: "img", "aria-label":
+      "A diagram of the digital twin: learning observations on the left converge into a single " +
+      "estimated state at the centre, ringed by its uncertainty and crossed by the student's " +
+      "personal baseline, which then diverges into many possible futures on the right." });
+
+    const cTeal = css("--teal"), cTeal2 = css("--teal-2"), cAmber = css("--amber"),
+          cIndigo = css("--indigo"), cInk = css("--ink"), cInk3 = css("--ink-3");
+
+    const layer = (name) => s("g", { class: "tc-layer", "data-layer": name });
+    const gObs = layer("observations"), gBase = layer("baseline"),
+          gCore = layer("state"), gFut = layer("futures");
+
+    /* ---- personal baseline: one horizontal rule through everything ---- */
+    gBase.appendChild(s("line", { x1: 26, x2: W - 26, y1: CY, y2: CY,
+      stroke: cAmber, "stroke-width": 1.3, "stroke-dasharray": "7 6", opacity: .85 }));
+    const bl = s("text", { x: 26, y: CY - 12, fill: cAmber, "font-size": 10.5,
+      "font-family": MONO, "letter-spacing": ".14em" });
+    bl.textContent = "PERSONAL BASELINE";
+    gBase.appendChild(bl);
+
+    /* ---- left: observations converging ---- */
+    const engRange = Math.max(...st.eng) - Math.min(...st.eng) || 1;
+    const engMin = Math.min(...st.eng);
+    for (let i = 0; i < nObs; i++) {
+      const f = i / (nObs - 1);
+      const x = 44 + f * 250;
+      const spread = (1 - f) * 108;
+      const norm = (st.eng[i] - engMin) / engRange - .5;
+      const y = CY + norm * 2 * spread;
+      const o = .18 + f * .5;
+      gObs.appendChild(s("line", { x1: x, y1: y, x2: CX - 96, y2: CY,
+        stroke: cInk3, "stroke-width": .7, "stroke-opacity": o * .5 }));
+      const dot = s("circle", { cx: x, cy: y, r: 2 + f * 1.6, fill: cInk,
+        "fill-opacity": o, class: "tc-in" });
+      dot.style.animationDelay = (i * 34) + "ms";
+      gObs.appendChild(dot);
+    }
+    const ol = s("text", { x: 44, y: H - 44, fill: cInk3, "font-size": 10.5,
+      "font-family": MONO, "letter-spacing": ".14em" });
+    ol.textContent = "LEARNING OBSERVATIONS";
+    gObs.appendChild(ol);
+
+    /* ---- centre: the state and its uncertainty ---- */
+    [96, 68, 44].forEach((r, i) => {
+      const ring = s("circle", { cx: CX, cy: CY, r: r, fill: "none", stroke: cTeal2,
+        "stroke-width": 1, "stroke-opacity": .16 + i * .1, class: "tc-ring" });
+      ring.style.animationDelay = (620 + i * 110) + "ms";
+      gCore.appendChild(ring);
+    });
+    gCore.appendChild(s("circle", { cx: CX, cy: CY, r: 44, fill: cTeal2,
+      "fill-opacity": .07, class: "tc-ring" }));
+    const core = s("circle", { cx: CX, cy: CY, r: 9, fill: cTeal, class: "tc-core" });
+    gCore.appendChild(core);
+    const cl = s("text", { x: CX, y: CY + 122, fill: cTeal, "font-size": 10.5,
+      "font-family": MONO, "letter-spacing": ".14em", "text-anchor": "middle" });
+    cl.textContent = "ESTIMATED STATE";
+    gCore.appendChild(cl);
+    const ul = s("text", { x: CX, y: CY - 108, fill: cTeal2, "font-size": 10,
+      "font-family": MONO, "letter-spacing": ".12em", "text-anchor": "middle", opacity: .8 });
+    ul.textContent = "UNCERTAINTY";
+    gCore.appendChild(ul);
+
+    /* ---- right: futures diverging (real particle endpoints) ---- */
+    const ends = particles.length
+      ? particles.map((p) => p[p.length - 1])
+      : st.eng.slice(-12);
+    const eMin = Math.min(...ends), eMax = Math.max(...ends), eR = (eMax - eMin) || 1;
+    ends.forEach((v, k) => {
+      const norm = (v - eMin) / eR - .5;
+      const x2 = W - 52, y2 = CY + norm * 224;
+      const cx1 = CX + 96, cy1 = CY, cx2 = x2 - 110, cy2 = y2;
+      const path = s("path", {
+        d: `M ${CX + 12} ${CY} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`,
+        fill: "none", stroke: cIndigo, "stroke-width": 1,
+        "stroke-opacity": .3, class: "tc-fut" });
+      path.style.animationDelay = (900 + k * 22) + "ms";
+      gFut.appendChild(path);
+      const e = s("circle", { cx: x2, cy: y2, r: 2.2, fill: cIndigo,
+        "fill-opacity": .5, class: "tc-in" });
+      e.style.animationDelay = (1200 + k * 22) + "ms";
+      gFut.appendChild(e);
+    });
+    const fl = s("text", { x: W - 52, y: H - 44, fill: cIndigo, "font-size": 10.5,
+      "font-family": MONO, "letter-spacing": ".14em", "text-anchor": "end" });
+    fl.textContent = "POSSIBLE FUTURES";
+    gFut.appendChild(fl);
+
+    [gBase, gObs, gFut, gCore].forEach((n) => g.appendChild(n));
+
+    /* ---- hover zones: reveal what each layer is ---- */
+    const ZONES = [
+      { name: "observations", x: 0, w: 300, title: "Learning observations",
+        body: "Weekly activity, submissions and scores. Evidence arriving over time." },
+      { name: "state", x: 300, w: 180, title: "The estimated state",
+        body: "One belief about where this student is now — with its uncertainty around it." },
+      { name: "futures", x: 480, w: 300, title: "Possible futures",
+        body: "The state run forward many times. A distribution, not a prediction." },
+    ];
+    const tip = el("div", { class: "tc-tip" }, [
+      el("p", { class: "tc-tip-t", text: "A living model of one student" }),
+      el("p", { class: "tc-tip-b", text: "Hover the diagram to see how it works." }),
+    ]);
+    ZONES.forEach((z) => {
+      const r = s("rect", { x: z.x, y: 0, width: z.w, height: H, fill: "transparent",
+        class: "tc-zone", tabindex: "0", role: "button",
+        "aria-label": z.title + ". " + z.body });
+      const enter = () => {
+        g.setAttribute("data-focus", z.name);
+        tip.querySelector(".tc-tip-t").textContent = z.title;
+        tip.querySelector(".tc-tip-b").textContent = z.body;
+      };
+      const leave = () => {
+        g.removeAttribute("data-focus");
+        tip.querySelector(".tc-tip-t").textContent = "A living model of one student";
+        tip.querySelector(".tc-tip-b").textContent = "Hover the diagram to see how it works.";
+      };
+      r.addEventListener("pointerenter", enter);
+      r.addEventListener("focus", enter);
+      r.addEventListener("pointerleave", leave);
+      r.addEventListener("blur", leave);
+      g.appendChild(r);
+    });
+
+    host.appendChild(g);
+    host.appendChild(tip);
+  }
+
+  /* ============================================================
+     HOW THE TWIN THINKS — four stages, one shared diagram.
+     Selecting a stage changes what the diagram emphasises, so the
+     pipeline is understood by watching one object change rather
+     than by reading four cards.
+     ============================================================ */
+  const STAGES = [
+    { k: "observe", n: "Observe", d: "New learning signals arrive — activity, submissions, scores.",
+      note: "Silence is a signal too. A week with no activity is evidence, not a gap." },
+    { k: "understand", n: "Understand", d: "The Twin estimates where the student is now, and how sure it is.",
+      note: "The estimate is a distribution. Certainty is part of the answer, not a footnote." },
+    { k: "update", n: "Update", d: "Last week's belief becomes this week's starting point.",
+      note: "Verified: recursive updating equals replaying the full history, to 0.00e+00." },
+    { k: "explore", n: "Explore", d: "The state is generative, so it can be run forward.",
+      note: "Many futures, with honest spread. Not a prediction, and never a guarantee." },
+  ];
+
+  function thinkSection(host) {
+    let active = 0;
+    const rail = el("div", { class: "stage-rail" });
+    const stageVis = el("div", { class: "stage-vis" });
+    const note = el("p", { class: "stage-note" });
+
+    function drawStage(i) {
+      const W = 640, H = 260, CX = 320, CY = 130;
+      const g = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+        "aria-label": STAGES[i].n + ": " + STAGES[i].d });
+      const cTeal = css("--teal"), cTeal2 = css("--teal-2"), cAmber = css("--amber"),
+            cIndigo = css("--indigo"), cInk = css("--ink"), cInk3 = css("--ink-3"),
+            cLine = css("--line");
+
+      g.appendChild(s("line", { x1: 30, x2: W - 30, y1: CY, y2: CY, stroke: cAmber,
+        "stroke-width": 1.1, "stroke-dasharray": "6 5", opacity: i === 1 ? .9 : .3 }));
+
+      // incoming evidence
+      for (let k = 0; k < 9; k++) {
+        const x = 46 + k * 22, on = i === 0;
+        g.appendChild(s("circle", { cx: x, cy: CY + Math.sin(k * 1.1) * 26, r: on ? 3.4 : 2.2,
+          fill: cInk, "fill-opacity": on ? .75 : .18 }));
+      }
+      // the state
+      const rings = i === 1 ? [50, 34] : [34];
+      rings.forEach((r, j) => g.appendChild(s("circle", { cx: CX, cy: CY, r: r, fill: "none",
+        stroke: cTeal2, "stroke-width": 1, "stroke-opacity": i === 1 ? .5 - j * .18 : .22 })));
+      g.appendChild(s("circle", { cx: CX, cy: CY, r: i >= 1 ? 8 : 5, fill: cTeal,
+        "fill-opacity": i >= 1 ? 1 : .35 }));
+
+      // the update arc: last week's belief moving to this week's
+      if (i === 2) {
+        g.appendChild(s("path", { d: `M ${CX - 92} ${CY} Q ${CX - 46} ${CY - 54} ${CX - 8} ${CY}`,
+          fill: "none", stroke: cTeal, "stroke-width": 1.6, "stroke-dasharray": "5 4" }));
+        g.appendChild(s("circle", { cx: CX - 92, cy: CY, r: 5, fill: cTeal, "fill-opacity": .3 }));
+      }
+      // futures
+      for (let k = 0; k < 11; k++) {
+        const on = i === 3, sp = (k / 10 - .5) * (on ? 190 : 40);
+        g.appendChild(s("path", {
+          d: `M ${CX + 10} ${CY} C ${CX + 90} ${CY}, ${W - 130} ${CY + sp}, ${W - 42} ${CY + sp}`,
+          fill: "none", stroke: cIndigo, "stroke-width": 1,
+          "stroke-opacity": on ? .38 : .1 }));
+      }
+      return g;
+    }
+
+    function select(i) {
+      active = i;
+      [...rail.children].forEach((c, k) => c.setAttribute("aria-selected", String(k === i)));
+      stageVis.innerHTML = "";
+      stageVis.appendChild(drawStage(i));
+      note.textContent = STAGES[i].note;
+    }
+
+    STAGES.forEach((stg, i) => {
+      const b = el("button", { type: "button", class: "stage-btn", role: "tab",
+        "aria-selected": String(i === 0) }, [
+        el("span", { class: "stage-n", text: String(i + 1).padStart(2, "0") }),
+        el("span", { class: "stage-name", text: stg.n }),
+        el("span", { class: "stage-d", text: stg.d }),
+      ]);
+      b.addEventListener("click", () => select(i));
+      b.addEventListener("pointerenter", () => select(i));
+      b.addEventListener("focus", () => select(i));
+      rail.appendChild(b);
+    });
+    rail.setAttribute("role", "tablist");
+
+    host.appendChild(el("div", { class: "stage-wrap" }, [rail,
+      el("div", {}, [stageVis, note])]));
+    select(0);
+  }
+
+  /* ============================================================
+     Onboarding twin: the same core, gaining layers as answers
+     arrive. The point is that you are building something, not
+     filling in a form.
+     ============================================================ */
+  function onboardTwin(host, step, profile) {
+    const W = 320, H = 320, CX = 160, CY = 160;
+    const g = s("svg", { viewBox: `0 0 ${W} ${H}`, "aria-hidden": "true", class: "ob-twin" });
+    const cTeal = css("--teal"), cTeal2 = css("--teal-2"), cAmber = css("--amber"),
+          cInk3 = css("--ink-3"), cIndigo = css("--indigo");
+
+    // uncertainty halo — always widest at the start, because it is
+    g.appendChild(s("circle", { cx: CX, cy: CY, r: 118, fill: "none", stroke: cTeal2,
+      "stroke-width": 1, "stroke-opacity": .16 }));
+    g.appendChild(s("circle", { cx: CX, cy: CY, r: 92, fill: cTeal2, "fill-opacity": .05 }));
+
+    // step 1+: identity core appears
+    if (step >= 1) {
+      g.appendChild(s("circle", { cx: CX, cy: CY, r: 9, fill: cTeal, class: "tc-core" }));
+    } else {
+      g.appendChild(s("circle", { cx: CX, cy: CY, r: 9, fill: "none", stroke: cInk3,
+        "stroke-width": 1.2, "stroke-dasharray": "3 3" }));
+    }
+
+    // step 2+: one node per course, orbiting
+    if (step >= 2 && profile.courses.length) {
+      profile.courses.forEach((c, i) => {
+        const a = (i / Math.max(profile.courses.length, 1)) * Math.PI * 2 - Math.PI / 2;
+        const x = CX + Math.cos(a) * 66, y = CY + Math.sin(a) * 66;
+        g.appendChild(s("line", { x1: CX, y1: CY, x2: x, y2: y, stroke: cTeal2,
+          "stroke-width": .8, "stroke-opacity": .3 }));
+        const n = s("circle", { cx: x, cy: y, r: 5, fill: cTeal2, "fill-opacity": .7, class: "tc-in" });
+        n.style.animationDelay = (i * 70) + "ms";
+        g.appendChild(n);
+      });
+    }
+
+    // step 3+: the personal baseline becomes a real mark
+    if (step >= 3) {
+      g.appendChild(s("line", { x1: 22, x2: W - 22, y1: CY, y2: CY, stroke: cAmber,
+        "stroke-width": 1.2, "stroke-dasharray": "6 5", class: "tc-in" }));
+    }
+
+    // step 4: futures remain latent — there are no observations to run forward
+    if (step >= 4) {
+      for (let k = 0; k < 7; k++) {
+        const sp = (k / 6 - .5) * 90;
+        g.appendChild(s("path", {
+          d: `M ${CX + 10} ${CY} C ${CX + 60} ${CY}, ${W - 70} ${CY + sp}, ${W - 26} ${CY + sp}`,
+          fill: "none", stroke: cIndigo, "stroke-width": 1, "stroke-opacity": .13,
+          "stroke-dasharray": "3 4" }));
+      }
+    }
+    host.appendChild(g);
+
+    const CAPS = [
+      "Nothing known yet.",
+      "Identity set. The state is still the cohort prior.",
+      profile.courses.length + " context" + (profile.courses.length === 1 ? "" : "s") + " attached.",
+      "A starting baseline — to be replaced by observed behaviour.",
+      "Futures stay dashed: there are no observations to run forward.",
+    ];
+    host.appendChild(el("p", { class: "ob-twin-cap", text: CAPS[Math.min(step, 4)] }));
+  }
+
   /* ================================================= onboarding ---- */
   const STEPS = ["Welcome", "You", "Courses", "Your normal", "Privacy"];
   let draft = null, obStep = 0;
@@ -1152,16 +1456,29 @@
 
   function obShell(inner) {
     const root = el("div", { class: "ob" });
-    const top = el("div", { class: "ob-top" }, [
+    root.appendChild(el("div", { class: "ob-top" }, [
       el("div", { class: "page ob-top-in" }, [
         el("a", { class: "brand", href: "#", "data-go": "" }, [icon("twin", 20),
           el("span", { text: "StudyTwin" })]),
         stepper(obStep),
       ]),
-    ]);
-    root.appendChild(top);
-    root.appendChild(el("div", { class: "ob-body" }, [el("div", { class: "ob-card" }, [inner])]));
+    ]));
+    // The twin is visible throughout and gains a layer per answer, so the
+    // flow reads as building something rather than completing a form.
+    const aside = el("aside", { class: "ob-aside", id: "ob-aside" });
+    onboardTwin(aside, obStep, draft || Store.blank());
+    root.appendChild(el("div", { class: "ob-body" }, [
+      el("div", { class: "ob-split" }, [aside, el("div", {}, [inner])]),
+    ]));
     return root;
+  }
+
+  /** Redraw the onboarding twin in place, so an answer visibly adds a layer. */
+  function refreshTwinAside() {
+    const aside = $("#ob-aside");
+    if (!aside) return;
+    aside.innerHTML = "";
+    onboardTwin(aside, obStep, draft || Store.blank());
   }
 
   function actions(nextLabel, onNext, opts) {
@@ -1257,7 +1574,7 @@
         chips.innerHTML = "";
         draft.courses.forEach((c, i) => {
           const x = el("button", { type: "button", "aria-label": "Remove " + c, text: "×" });
-          x.addEventListener("click", () => { draft.courses.splice(i, 1); redraw(); });
+          x.addEventListener("click", () => { draft.courses.splice(i, 1); redraw(); refreshTwinAside(); });
           chips.appendChild(el("span", { class: "chip-in" }, [el("span", { text: c }), x]));
         });
         if (!draft.courses.length) chips.appendChild(el("span", { class: "hint",
@@ -1272,7 +1589,7 @@
         if (e.key === "Enter" && e.target.value.trim()) {
           e.preventDefault();
           if (draft.courses.length < 8) draft.courses.push(e.target.value.trim());
-          e.target.value = ""; redraw();
+          e.target.value = ""; redraw(); refreshTwinAside();
         }
       });
       f.appendChild(inp);
@@ -1281,7 +1598,7 @@
         const b = el("button", { type: "button", text: "+ " + cName });
         b.addEventListener("click", () => {
           if (!draft.courses.includes(cName) && draft.courses.length < 8) {
-            draft.courses.push(cName); redraw();
+            draft.courses.push(cName); redraw(); refreshTwinAside();
           }
         });
         sug.appendChild(b);
@@ -1315,6 +1632,7 @@
           draft.baseline[key] = +e.target.value;
           out.textContent = fmtv(+e.target.value);
         });
+        r.addEventListener("change", refreshTwinAside);
         wrap.appendChild(el("div", { class: "slider-row" }, [
           el("div", { class: "slider-head" }, [el("label", { for: "sl-" + key, text: label }), out]),
           r,
