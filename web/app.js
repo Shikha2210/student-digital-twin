@@ -151,7 +151,7 @@
     const g = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%",
       role: "img", "aria-label": opts.label || "State ribbon" });
 
-    const cTeal = css("--teal-2"), cRose = css("--rose"), cAmber = css("--amber"),
+    const cTeal = css("--teal-2"), cRose = css("--coral"), cAmber = css("--amber"),
           cInk = css("--ink"), cInk3 = css("--ink-3"), cLine = css("--line");
 
     // y gridlines
@@ -362,7 +362,7 @@
     const g = s("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img",
       "aria-label": "Observations associated with the state change this week" });
     const cInk2 = css("--ink-2"), cInk3 = css("--ink-3"), cTeal = css("--teal-2"),
-          cRose = css("--rose"), cLine = css("--line");
+          cRose = css("--coral"), cLine = css("--line");
     g.appendChild(s("line", { x1: mid, x2: mid, y1: 4, y2: rows.length * rowH + 4, stroke: cLine }));
     rows.forEach(([name, v], i) => {
       const y = 6 + i * rowH, res = name === "not attributable";
@@ -452,7 +452,7 @@
     }));
     hero.appendChild(el("div", { class: "legend" }, [
       legend("above own baseline", css("--teal-2")),
-      legend("below own baseline", css("--rose")),
+      legend("below own baseline", css("--coral")),
       legend("personal baseline θ", css("--amber"), true),
       el("span", { text: "thickness = 95% credible interval" }),
       el("span", { text: "dots = 20-quantile posterior" }),
@@ -891,9 +891,9 @@
       });
       const mv = valueOf(me);
       g.appendChild(s("line", { x1: X(mv), x2: X(mv), y1: 30, y2: 70,
-        stroke: centre ? css("--rose") : css("--teal-2"), "stroke-width": 2 }));
+        stroke: centre ? css("--coral") : css("--teal-2"), "stroke-width": 2 }));
       const t = s("text", { x: X(mv), y: 24, "text-anchor": "middle",
-        fill: centre ? css("--rose") : css("--teal-2"), "font-size": 11, "font-family": MONO });
+        fill: centre ? css("--coral") : css("--teal-2"), "font-size": 11, "font-family": MONO });
       t.textContent = (mv >= 0 ? "+" : "") + fmt(mv);
       g.appendChild(t);
       if (centre) {
@@ -991,7 +991,7 @@
 
   function mountLanding() {
     const mounts = [
-      ["#hero-vis", twinCore],
+      ["#hero-vis", twinModel],
       ["#vis-think", thinkSection],
       ["#vis-cohort", cohortStrip],
       ["#vis-contrast", contrastPair],
@@ -1282,6 +1282,170 @@
 
     host.appendChild(g);
     host.appendChild(tip);
+  }
+
+  /* ============================================================
+     THE TWIN MODEL — hero visual, on the deep plane.
+
+     Replaces the earlier converge/diverge funnel, which read as a
+     diagram rather than as a model of something. This is built as
+     an instrument: a state at the centre, the student's own
+     baseline as a ring around it, the signal channels that feed
+     it orbiting outside, and futures branching to the right.
+
+     Every element maps to something the model actually has.
+     Nothing is here to fill space.
+     ============================================================ */
+  function twinModel(host) {
+    const W = 760, H = 470, CX = 296, CY = 232;
+    const sim = D.sim, particles = (sim && sim.particles) || [];
+
+    const wrap = el("div", { class: "tm-wrap" });
+    const g = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "tm-svg", role: "img",
+      "aria-label":
+      "A model of one student: signal channels feeding a central estimated state, " +
+      "ringed by that student's own baseline and its uncertainty, branching into " +
+      "possible futures." });
+
+    const TEAL = "#22D3B8", TEAL_D = "#0A9C8A", AMB = "#F0A93C",
+          IND = "#7B72FF", ON = "#E8EDEC", MUT = "#6E858C";
+
+    const mk = (n) => s("g", { class: "tm-layer", "data-layer": n });
+    const gLink = mk("channels"), gRing = mk("baseline"),
+          gCore = mk("state"), gFut = mk("futures"), gNode = mk("channels");
+
+    /* ---- uncertainty: the widest thing on screen, as it should be ---- */
+    [124, 100, 76].forEach((r, i) => {
+      const c = s("circle", { cx: CX, cy: CY, r: r, fill: "none", stroke: TEAL,
+        "stroke-opacity": .07 + i * .05, "stroke-width": 1, class: "tm-ring" });
+      c.style.animationDelay = (240 + i * 120) + "ms";
+      gCore.appendChild(c);
+    });
+    gCore.appendChild(s("circle", { cx: CX, cy: CY, r: 76, fill: TEAL,
+      "fill-opacity": .05, class: "tm-ring" }));
+
+    /* ---- the student's own baseline: a ring, not a line.
+           A ring says "your normal is a place you orbit", which is
+           what the mean-reverting transition actually encodes. ---- */
+    const ring = s("circle", { cx: CX, cy: CY, r: 56, fill: "none", stroke: AMB,
+      "stroke-width": 1.6, "stroke-dasharray": "6 7", "stroke-opacity": .9, class: "tm-ring" });
+    ring.style.animationDelay = "520ms";
+    gRing.appendChild(ring);
+    const rl = s("text", { x: CX, y: CY - 66, fill: AMB, "font-size": 10,
+      "font-family": MONO, "letter-spacing": ".16em", "text-anchor": "middle", class: "tm-fade" });
+    rl.textContent = "YOUR OWN BASELINE";
+    gRing.appendChild(rl);
+
+    /* ---- the estimated state: offset from the baseline ring, because
+           this student is currently below their own normal ---- */
+    const SX = CX - 22, SY = CY + 27;
+    gCore.appendChild(s("circle", { cx: SX, cy: SY, r: 26, fill: TEAL,
+      "fill-opacity": .16, class: "tm-pulse" }));
+    const core = s("circle", { cx: SX, cy: SY, r: 11, fill: TEAL, class: "tm-core" });
+    gCore.appendChild(core);
+    const sl = s("text", { x: SX, y: SY + 46, fill: TEAL, "font-size": 10,
+      "font-family": MONO, "letter-spacing": ".16em", "text-anchor": "middle", class: "tm-fade" });
+    sl.textContent = "ESTIMATED STATE";
+    gCore.appendChild(sl);
+    // the deviation, drawn as the thing it is: a gap
+    gCore.appendChild(s("line", { x1: CX, y1: CY, x2: SX, y2: SY, stroke: TEAL,
+      "stroke-width": 1, "stroke-opacity": .5, "stroke-dasharray": "2 3", class: "tm-fade" }));
+
+    /* ---- signal channels: what the twin actually reads ---- */
+    const CHANNELS = [
+      { n: "Content views",     a: -158, r: 210 },
+      { n: "Forum activity",    a: -104, r: 186 },
+      { n: "Quiz attempts",     a:  -70, r: 168 },
+      { n: "Submissions",       a:  152, r: 206 },
+      { n: "Assessment scores", a:  118, r: 186 },
+    ];
+    CHANNELS.forEach((ch, i) => {
+      const rad = (ch.a * Math.PI) / 180;
+      const x = CX + Math.cos(rad) * ch.r, y = CY + Math.sin(rad) * ch.r * .62;
+      const path = s("path", {
+        d: `M ${x} ${y} Q ${(x + CX) / 2} ${(y + CY) / 2 - 18} ${CX} ${CY}`,
+        fill: "none", stroke: TEAL_D, "stroke-width": 1, "stroke-opacity": .34,
+        class: "tm-draw" });
+      path.style.animationDelay = (700 + i * 90) + "ms";
+      gLink.appendChild(path);
+
+      const node = s("circle", { cx: x, cy: y, r: 5.5, fill: TEAL_D,
+        "fill-opacity": .9, class: "tm-fade" });
+      node.style.animationDelay = (760 + i * 90) + "ms";
+      gNode.appendChild(node);
+
+      const anchor = x < CX ? "end" : "start";
+      const t = s("text", { x: x + (x < CX ? -12 : 12), y: y + 4, fill: MUT,
+        "font-size": 11, "font-family": MONO, "letter-spacing": ".04em",
+        "text-anchor": anchor, class: "tm-fade" });
+      t.textContent = ch.n;
+      t.style.animationDelay = (800 + i * 90) + "ms";
+      gNode.appendChild(t);
+    });
+
+    /* ---- futures: real particle endpoints, branching right ---- */
+    gFut.appendChild(s("circle", { cx: SX, cy: SY, r: 16, fill: IND,
+      "fill-opacity": .16, class: "tm-fade" }));
+    const ends = particles.length ? particles.map((p) => p[p.length - 1]) : [];
+    const eMin = Math.min(...ends), eMax = Math.max(...ends), eR = (eMax - eMin) || 1;
+    ends.slice(0, 18).forEach((v, k) => {
+      const norm = (v - eMin) / eR - .5;
+      const x2 = W - 46, y2 = CY + norm * 330;
+      const p2 = s("path", {
+        d: `M ${SX + 10} ${SY} C ${SX + 130} ${SY}, ${x2 - 190} ${y2}, ${x2} ${y2}`,
+        fill: "none", stroke: IND, "stroke-width": 1.2, "stroke-opacity": .34,
+        class: "tm-draw" });
+      p2.style.animationDelay = (1080 + k * 26) + "ms";
+      gFut.appendChild(p2);
+    });
+    const fl = s("text", { x: W - 46, y: CY - 96, fill: IND, "font-size": 10,
+      "font-family": MONO, "letter-spacing": ".16em", "text-anchor": "end", class: "tm-fade" });
+    fl.textContent = "POSSIBLE FUTURES";
+    gFut.appendChild(fl);
+
+    [gCore, gRing, gLink, gFut, gNode].forEach((n) => g.appendChild(n));
+
+    /* ---- interaction: each zone explains itself ---- */
+    const ZONES = [
+      { name: "channels", x: 0, y: 0, w: 176, h: H, t: "Learning signals",
+        b: "Weekly activity, submissions and scores. Silence counts as evidence too." },
+      { name: "baseline", x: 176, y: 0, w: 104, h: H, t: "Your own baseline",
+        b: "A fitted parameter, not the cohort average. Your normal, learned from you." },
+      { name: "state", x: 280, y: 120, w: 140, h: 230, t: "The estimated state",
+        b: "Where the model believes you are now — and how far that sits from your normal." },
+      { name: "futures", x: 420, y: 0, w: 340, h: H, t: "Possible futures",
+        b: "The state run forward 600 times. A distribution, never a prediction." },
+    ];
+    const panel = el("div", { class: "tm-panel" }, [
+      el("p", { class: "tm-panel-t", text: "A living model of one student" }),
+      el("p", { class: "tm-panel-b", text: "Hover any part of the model to see what it is." }),
+    ]);
+    ZONES.forEach((z) => {
+      const r = s("rect", { x: z.x, y: z.y, width: z.w, height: z.h, fill: "transparent",
+        class: "tm-zone", tabindex: "0", role: "button", "aria-label": z.t + ". " + z.b });
+      const on = () => {
+        g.setAttribute("data-focus", z.name);
+        panel.querySelector(".tm-panel-t").textContent = z.t;
+        panel.querySelector(".tm-panel-b").textContent = z.b;
+      };
+      const off = () => {
+        g.removeAttribute("data-focus");
+        panel.querySelector(".tm-panel-t").textContent = "A living model of one student";
+        panel.querySelector(".tm-panel-b").textContent = "Hover any part of the model to see what it is.";
+      };
+      r.addEventListener("pointerenter", on); r.addEventListener("focus", on);
+      r.addEventListener("pointerleave", off); r.addEventListener("blur", off);
+      g.appendChild(r);
+    });
+
+    wrap.appendChild(el("div", { class: "tm-chrome" }, [
+      el("span", { class: "tm-dot" }),
+      el("span", { class: "tm-chrome-t", text: "TWIN MODEL" }),
+      el("span", { class: "tm-chrome-s", text: "synthetic · 20 weeks observed" }),
+    ]));
+    wrap.appendChild(g);
+    wrap.appendChild(panel);
+    host.appendChild(wrap);
   }
 
   /* ============================================================
