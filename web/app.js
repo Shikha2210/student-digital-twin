@@ -791,7 +791,8 @@
     if (h.startsWith("onboarding")) {
       site.hidden = true; app.hidden = false;
       app.className = ""; app.innerHTML = "";
-      app.appendChild(boundary("Onboarding", viewOnboarding));
+      app.appendChild(boundary("Onboarding", () =>
+        window.ST_Onboarding ? window.ST_Onboarding.render(OB_CTX) : viewOnboarding()));
       window.scrollTo(0, 0);
       return;
     }
@@ -1022,6 +1023,24 @@
      trajectory that does not exist.
      ============================================================ */
 
+  /** Fold the richer v2 onboarding profile into the shape the twin views expect,
+      so the dashboard has one profile contract regardless of which flow created it. */
+  function v2fold(v) {
+    return {
+      v: 2, created: v.created, observations: 0, consent: !!v.consent,
+      name: (v.identity || {}).name || "",
+      level: (v.identity || {}).year || "",
+      institution: (v.identity || {}).institution || "",
+      courses: (v.courses || []).map((c) => c.name),
+      baseline: {
+        study_hours: (v.baseline || {}).hours,
+        consistency: (v.baseline || {}).consistency,
+        workload: (v.baseline || {}).workload,
+      },
+      rich: v,
+    };
+  }
+
   /** Prototype persistence. Shaped to mirror a future POST /api/twin so the
       swap is one module, not a refactor. */
   const Store = {
@@ -1034,7 +1053,11 @@
       try { localStorage.setItem(this.KEY, JSON.stringify(p)); return true; }
       catch (e) { console.warn("[StudyTwin] profile not persisted:", e); return false; }
     },
-    clear() { try { localStorage.removeItem(this.KEY); } catch (e) { } },
+    clear() { try { localStorage.removeItem(this.KEY); localStorage.removeItem(this.KEY2); } catch (e) { } },
+    KEY2: "studytwin.profile.v2",
+    read2() { try { return JSON.parse(localStorage.getItem(this.KEY2) || "null"); } catch (e) { return null; } },
+    write2(p) { try { localStorage.setItem(this.KEY2, JSON.stringify(p)); return true; }
+                catch (e) { console.warn("[StudyTwin] profile not persisted:", e); return false; } },
     blank() {
       return {
         v: 1, created: null, name: "", level: "", institution: "",
@@ -1640,6 +1663,13 @@
   }
 
   /** Redraw the onboarding twin in place, so an answer visibly adds a layer. */
+  const OB_CTX = {
+    el: el, s: s, icon: icon, css: css, fmt: fmt, pct: pct, Store: Store,
+    go: (h) => go(h),
+    rerender: () => render(),
+    rerenderVis: () => { if (window.ST_Onboarding) window.ST_Onboarding.refreshVis(); },
+  };
+
   function refreshTwinAside() {
     const aside = $("#ob-aside");
     if (!aside) return;
@@ -1857,7 +1887,8 @@
 
   /* ------------------------------------------- initialisation ---- */
   function viewInit() {
-    const p = Store.read() || Store.blank();
+    const v2 = Store.read2();
+    const p = v2 ? v2fold(v2) : (Store.read() || Store.blank());
     const root = el("div", { class: "ob" });
     root.appendChild(el("div", { class: "ob-top" }, [el("div", { class: "page ob-top-in" }, [
       el("span", { class: "brand" }, [icon("twin", 20), el("span", { text: "StudyTwin" })]),
@@ -1907,7 +1938,8 @@
 
   /* ------------------------------------------ the new user's twin ---- */
   function viewTwinNew() {
-    const p = Store.read();
+    const v2 = Store.read2();
+    const p = v2 ? v2fold(v2) : Store.read();
     const v = el("div", { class: "view" });
     if (!p) {
       v.appendChild(emptyState("No Twin on this device",
