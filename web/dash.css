@@ -1,0 +1,168 @@
+/* ============================================================
+   Dashboard visual language
+   ------------------------------------------------------------
+   Composition over cards. A metric strip, one dominant panel with
+   its interpretation beside it, and a sidebar that reports the
+   Twin's status rather than only listing routes.
+   ============================================================ */
+
+/* ---- metric strip: chips, not five giant white cards --------- */
+.mstrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.mchip {
+  background: var(--surface);
+  padding: var(--s4) var(--s5);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  transition: background .16s ease;
+}
+.mchip:hover { background: var(--surface-2); }
+.mchip-l { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.mchip-lbl {
+  font-family: var(--mono); font-size: .58rem; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mchip-val {
+  font-size: 1.65rem; letter-spacing: -.028em; line-height: 1.1; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.mchip.down .mchip-val { color: var(--coral); }
+.mchip.up .mchip-val { color: var(--teal); }
+.mchip.amber .mchip-val { color: var(--amber); }
+.mchip-sub { font-family: var(--mono); font-size: .64rem; color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mchip-sp { flex: none; opacity: .85; }
+.spark { width: 92px; height: 28px; }
+
+/* ---- panel: open composition, not a bordered box ------------- */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: var(--s5) var(--s5) var(--s4);
+}
+.panel-h {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--s5); flex-wrap: wrap; margin-bottom: var(--s4);
+}
+.panel-t {
+  font-family: var(--serif); font-size: 1.35rem; font-weight: 700;
+  letter-spacing: -.018em; margin: 0 0 .2rem;
+}
+.panel-s { font-size: .88rem; color: var(--ink-3); margin: 0; max-width: 60ch; }
+.panel-key { display: flex; gap: var(--s4); flex-wrap: wrap; }
+.kdw { display: flex; align-items: center; gap: .45rem;
+  font-family: var(--mono); font-size: .66rem; color: var(--ink-3); }
+.kd { width: 18px; height: 0; border-top-width: 2.5px; border-top-style: solid; display: inline-block; }
+
+.panel-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) 250px;
+  gap: var(--s5); align-items: start;
+}
+.panel-chart { min-width: 0; }
+.tc2 { width: 100%; height: auto; display: block; }
+.tc2-tip { transition: opacity .12s ease; pointer-events: none; }
+
+/* ---- interpretation panel beside the chart ------------------- */
+.readout {
+  align-self: stretch;
+  border-left: 1px solid var(--line);
+  padding-left: var(--s5);
+  display: flex; flex-direction: column; gap: .1rem;
+}
+.ro-w {
+  font-family: var(--mono); font-size: .6rem; letter-spacing: .14em;
+  color: var(--ink-3); margin: 0 0 .2rem;
+}
+.ro-big {
+  font-size: 2.9rem; letter-spacing: -.035em; line-height: 1;
+  margin: 0 0 var(--s4); font-variant-numeric: tabular-nums;
+}
+.ro-big.down { color: var(--coral); }
+.ro-big.up { color: var(--teal); }
+.ro-row {
+  display: flex; justify-content: space-between; gap: var(--s3);
+  padding: .42rem 0; border-bottom: 1px solid var(--line-2);
+  font-size: .85rem; color: var(--ink-2);
+}
+.ro-row:last-of-type { border-bottom: none; }
+.ro-status {
+  margin: var(--s3) 0 0; font-size: .78rem; font-weight: 600;
+  padding: .4rem .6rem; border-radius: var(--r-sm); text-align: center;
+}
+.ro-status.down { background: var(--coral-2); color: var(--coral); }
+.ro-status.up { background: var(--teal-3); color: var(--teal); }
+.ro-why {
+  margin: var(--s4) 0 0; font-size: .8rem; color: var(--ink-2); line-height: 1.5;
+  padding-top: var(--s3); border-top: 1px solid var(--line-2);
+}
+.ro-why b { font-family: var(--mono); font-size: .6rem; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3); font-weight: 400; }
+
+/* ---- Future Lab ---------------------------------------------- */
+.lab-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--s5); flex-wrap: wrap; margin-bottom: var(--s2);
+}
+.lab-t {
+  font-family: var(--serif); font-size: clamp(1.7rem, 2.6vw, 2.4rem);
+  font-weight: 700; letter-spacing: -.024em; margin: 0 0 .25rem;
+}
+.scen { display: flex; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s5); }
+.scen-b {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .75rem 1.1rem; border: 1px solid var(--line);
+  border-radius: var(--r-md); background: var(--surface);
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.scen-b:hover { border-color: var(--ink-3); }
+.scen-b[aria-pressed="true"] {
+  border-color: var(--ink); background: var(--surface);
+  box-shadow: 0 0 0 1px var(--ink), var(--shadow);
+}
+.scen-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.scen-n { font-size: .92rem; color: var(--ink-2); }
+.scen-b[aria-pressed="true"] .scen-n { color: var(--ink); font-weight: 600; }
+.scen-r { font-size: .82rem; color: var(--ink-3); margin-left: .3rem; }
+
+/* ---- sidebar with Twin status -------------------------------- */
+.side-status {
+  margin-top: var(--s5); padding: var(--s4) .55rem 0;
+  border-top: 1px solid var(--line-2);
+}
+.ss-h {
+  font-family: var(--mono); font-size: .58rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-3); margin: 0 0 var(--s3);
+}
+.ss-live { display: flex; align-items: center; gap: .45rem; margin-bottom: var(--s3);
+  font-size: .82rem; font-weight: 600; }
+.ss-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--teal);
+  box-shadow: 0 0 0 3px var(--teal-3); }
+.ss-row { display: flex; justify-content: space-between; gap: .5rem;
+  font-size: .78rem; color: var(--ink-3); padding: .28rem 0; }
+.ss-row b { color: var(--ink); font-weight: 600; font-family: var(--mono); }
+.ss-bar { height: 4px; border-radius: 2px; background: var(--surface-3);
+  overflow: hidden; margin: .35rem 0 .6rem; }
+.ss-fill { display: block; height: 100%; background: var(--teal); border-radius: 2px;
+  transition: width .5s cubic-bezier(.22,.61,.36,1); }
+
+.cring { width: 100%; height: auto; max-width: 260px; }
+.cring-arc { transition: stroke-dasharray .6s cubic-bezier(.22,.61,.36,1); }
+
+@media (max-width: 1100px) {
+  .panel-body { grid-template-columns: 1fr; }
+  .readout { border-left: none; padding-left: 0;
+    border-top: 1px solid var(--line); padding-top: var(--s4); }
+}
+@media (max-width: 640px) {
+  .mstrip { grid-template-columns: 1fr 1fr; }
+  .mchip-val { font-size: 1.35rem; }
+  .ro-big { font-size: 2.2rem; }
+}

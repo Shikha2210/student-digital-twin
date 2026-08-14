@@ -428,169 +428,213 @@
   }
 
   function viewOverview() {
+    const C = window.ST_Charts;
     const v = el("div", { class: "view" });
 
-    // — the signature object gets the dominant position, alone —
-    const hero = el("section", { class: "card" });
-    hero.appendChild(el("div", { class: "card-head" }, [
-      el("div", {}, [
-        el("p", { class: "card-title", text: "Where is this student, relative to their own normal?" }),
-        el("p", { class: "card-sub", html: "Engagement state across " + st.t.length + " observed weeks. Ribbon thickness is the 95% credible interval &mdash; uncertainty is the mark, not an overlay." }),
-      ]),
-      el("span", { class: "chip chip-observed", text: "Observed" }),
-    ]));
-    const stats = el("div", { class: "stat-row", style: "margin-bottom:1.25rem" }, [
-      stat("Engagement state", fmt(lastEng), "±" + fmt(lastSd) + "  95% CI " + fmt(lastEng - 1.96 * lastSd) + "–" + fmt(lastEng + 1.96 * lastSd), dev < 0 ? "below" : "above"),
-      stat("Own baseline θ", fmt(theta), "shrinkage k = " + fmt(D.shrinkage[0]), ""),
-      stat("Deviation from θ", (dev >= 0 ? "+" : "") + fmt(dev), dev < 0 ? "below own normal" : "above own normal", dev < 0 ? "below" : "above"),
-      stat("Weekly hazard", pct(lastHz, 2), "from " + pct(D.hazard[0], 2) + " at week 0", ""),
-    ]);
-    hero.insertBefore(stats, hero.firstChild.nextSibling);
-    hero.appendChild(ribbon({
-      mean: st.eng, sd: st.eng_sd, theta: theta, dots: true, h: 300,
-      label: `Engagement state for ${D.student.id} across ${st.t.length} weeks, against a personal baseline of ${fmt(theta)}. Ribbon thickness shows the 95% credible interval.`
-    }));
-    hero.appendChild(el("div", { class: "legend" }, [
-      legend("above own baseline", css("--teal-2")),
-      legend("below own baseline", css("--coral")),
-      legend("personal baseline θ", css("--amber"), true),
-      el("span", { text: "thickness = 95% credible interval" }),
-      el("span", { text: "dots = 20-quantile posterior" }),
-    ]));
-    hero.appendChild(el("div", { class: "note", style: "margin-top:1rem" }, [
-      icon("alert", 16),
-      el("div", { html: "<b>Known limitation.</b> Nominal 95% intervals cover about 81% of true states in validation, so the ribbon is narrower than it should be. Parameter and transfer uncertainty are not yet estimated." }),
-    ]));
-    v.appendChild(hero);
+    // Metric strip: chips with a sparkline, not five giant white cards.
+    const chips = el("div", { class: "mstrip" });
+    const chip = (lbl, val, sub, tone, sparkVals) => {
+      const c = el("div", { class: "mchip " + (tone || "") }, [
+        el("div", { class: "mchip-l" }, [
+          el("span", { class: "mchip-lbl", text: lbl }),
+          el("span", { class: "mchip-val num", text: val }),
+          el("span", { class: "mchip-sub", text: sub }),
+        ]),
+      ]);
+      if (sparkVals) {
+        const sp = el("div", { class: "mchip-sp" });
+        sp.appendChild(C.spark(sparkVals, tone === "down" ? css("--coral") : css("--teal-2")));
+        c.appendChild(sp);
+      }
+      return c;
+    };
+    chips.appendChild(chip("Current state", fmt(lastEng),
+      "+/- " + fmt(lastSd) + " (95% CI)", dev < 0 ? "down" : "up", st.eng));
+    chips.appendChild(chip("Personal baseline", fmt(theta),
+      "shrinkage k = " + fmt(D.shrinkage[0]), "amber"));
+    chips.appendChild(chip("Deviation", (dev >= 0 ? "+" : "") + fmt(dev),
+      dev < 0 ? "below own normal" : "above own normal", dev < 0 ? "down" : "up"));
+    chips.appendChild(chip("Weekly hazard", pct(lastHz, 2),
+      "from " + pct(D.hazard[0], 2) + " at w0", "", D.hazard));
+    chips.appendChild(chip("Observations", String(st.t.length),
+      "weeks, synthetic cohort", ""));
+    v.appendChild(chips);
 
-    // — why it moved, this week —
-    const g2 = el("div", { class: "grid-2" });
-    const why = el("section", { class: "card" });
-    const rec = D.attrib[currentWeek] || D.attrib[D.attrib.length - 1];
-    why.appendChild(el("div", { class: "card-head" }, [
+    // Primary visualisation, full width, with a live interpretation panel.
+    const main = el("section", { class: "panel" });
+    main.appendChild(el("div", { class: "panel-h" }, [
       el("div", {}, [
-        el("p", { class: "card-title", text: "What moved the estimate in week " + rec.t + "?" }),
-        el("p", { class: "card-sub", text: "Observations associated with the change — not causes of it." }),
+        el("h2", { class: "panel-t", text: "Where is this student, relative to their own normal?" }),
+        el("p", { class: "panel-s", text: "Engagement across " + st.t.length +
+          " observed weeks, then eight simulated. Hover to inspect any week." }),
+      ]),
+      el("div", { class: "panel-key" }, [
+        keyd("observed", css("--ink")), keyd("baseline", css("--amber"), true),
+        keyd("simulated", css("--indigo"), true),
       ]),
     ]));
+
+    const chartHost = el("div", { class: "panel-chart" });
+    const readout = el("div", { class: "readout" });
+    function paintReadout(i) {
+      const k = (i === null || i === undefined) ? st.eng.length - 1 : i;
+      const d0 = st.eng[k] - theta;
+      readout.innerHTML = "";
+      readout.appendChild(el("p", { class: "ro-w",
+        text: (i === null || i === undefined ? "CURRENT / WEEK " : "WEEK ") + st.t[k] }));
+      readout.appendChild(el("p", { class: "ro-big num " + (d0 < 0 ? "down" : "up"),
+        text: fmt(st.eng[k]) }));
+      [["Personal baseline", fmt(theta)],
+       ["Deviation", (d0 >= 0 ? "+" : "") + fmt(d0)],
+       ["Uncertainty", "+/- " + fmt(1.96 * st.eng_sd[k])],
+       ["Capability", fmt(st.cap[k])]
+      ].forEach(function (row) {
+        readout.appendChild(el("div", { class: "ro-row" }, [
+          el("span", { text: row[0] }), el("span", { class: "num", text: row[1] })]));
+      });
+      readout.appendChild(el("p", { class: "ro-status " + (d0 < 0 ? "down" : "up"),
+        text: d0 < 0 ? "Below personal baseline" : "At or above personal baseline" }));
+      const rec = D.attrib[k];
+      if (rec) {
+        const top = Object.entries(rec.ch).filter(function (e) { return Math.abs(e[1]) > 1e-3; })
+          .sort(function (x, y) { return Math.abs(y[1]) - Math.abs(x[1]); })[0];
+        readout.appendChild(el("p", { class: "ro-why", html: "<b>What moved it</b><br>" +
+          (top ? top[0].replace(/_/g, " ") + " contributed " + (top[1] >= 0 ? "+" : "") +
+            fmt(top[1], 3) : "no single channel dominated") +
+          (Math.abs(rec.unexp) > 0.02 ? "<br><span class='muted'>residual / unexplained " +
+            fmt(rec.unexp, 3) + "</span>" : "") }));
+      }
+    }
+    chartHost.appendChild(C.twinChart({
+      mean: st.eng, sd: st.eng_sd, theta: theta, h: 400,
+      sim: { weeks: D.sim.weeks, lo: D.sim.base_lo, med: D.sim.base_med, hi: D.sim.base_hi },
+      onHover: paintReadout,
+      label: "Engagement for the demo student across 20 observed weeks against a personal baseline",
+    }));
+    main.appendChild(el("div", { class: "panel-body" }, [chartHost, readout]));
+    paintReadout(null);
+    main.appendChild(el("div", { class: "note" }, [icon("alert", 16),
+      el("div", { html: "<b>Known limitation.</b> Nominal 95% intervals cover about 81% of " +
+        "true states in validation, so the band is narrower than it should be. Parameter and " +
+        "transfer uncertainty are not yet estimated." })]));
+    v.appendChild(main);
+
+    // Drivers, with the residual shown rather than normalised away.
+    const why = el("section", { class: "panel" });
+    let wk = st.t.length - 1;
+    why.appendChild(el("div", { class: "panel-h" }, [el("div", {}, [
+      el("h2", { class: "panel-t", text: "What moved the estimate" }),
+      el("p", { class: "panel-s", text: "Observations associated with the change, not causes of it." }),
+    ])]));
     const holder = el("div", {});
-    holder.appendChild(attribBar(rec));
+    const redrawWhy = function () { holder.innerHTML = ""; holder.appendChild(attribBar(D.attrib[wk])); };
+    redrawWhy();
     why.appendChild(holder);
     const scrub = el("div", { class: "wk-inspect" }, [
-      el("label", { class: "muted", style: "font-size:.78rem", for: "wk", text: "Inspect week" }),
-    ]);
-    const range = el("input", { type: "range", id: "wk", min: 0, max: String(st.t.length - 1), value: String(currentWeek) });
-    const wkOut = el("span", { class: "num", style: "font-size:.82rem", text: "w" + rec.t });
-    range.addEventListener("input", (e) => {
-      currentWeek = +e.target.value;
-      const r2 = D.attrib[currentWeek];
-      holder.innerHTML = ""; holder.appendChild(attribBar(r2));
-      wkOut.textContent = "w" + r2.t;
-      why.querySelector(".card-title").textContent = "What moved the estimate in week " + r2.t + "?";
+      el("label", { class: "muted", style: "font-size:.8rem", for: "wk", text: "Inspect week" })]);
+    const range = el("input", { type: "range", id: "wk", min: "0",
+      max: String(st.t.length - 1), value: String(wk) });
+    const out = el("span", { class: "num", text: "w" + wk });
+    range.addEventListener("input", function (e) {
+      wk = +e.target.value; redrawWhy(); out.textContent = "w" + wk; paintReadout(wk);
     });
-    scrub.appendChild(range); scrub.appendChild(wkOut);
+    scrub.appendChild(range); scrub.appendChild(out);
     why.appendChild(scrub);
-    why.appendChild(el("div", { class: "note", style: "margin-top:.9rem" }, [
-      icon("info", 16),
-      el("div", { html: "The grey <b>not attributable</b> bar is the higher-order term the first-order decomposition cannot assign. Most tools normalise it away; showing it is the honest choice." }),
-    ]));
-    g2.appendChild(why);
-
-    // — capability, and its weakness, stated —
-    const cap = el("section", { class: "card" });
-    cap.appendChild(el("div", { class: "card-head" }, [
-      el("div", {}, [
-        el("p", { class: "card-title", text: "Capability state" }),
-        el("p", { class: "card-sub", text: "Driven by assessment scores, which arrive every 3–4 weeks." }),
-      ]),
-      el("span", { class: "chip chip-observed", text: "Observed" }),
-    ]));
-    cap.appendChild(ribbon({ mean: st.cap, sd: st.cap_sd, theta: D.student.theta[1], h: 250,
-      label: "Capability state across observed weeks." }));
-    cap.appendChild(el("div", { class: "note", style: "margin-top:.9rem" }, [
-      icon("alert", 16),
-      el("div", { html: "<b>Weakly identified.</b> In ground-truth validation the capability dimension recovers at r = 0.73 against 0.93 for engagement, and its week-to-week change at r = 0.14. Read levels here, not movements." }),
-    ]));
-    g2.appendChild(cap);
-    v.appendChild(g2);
+    why.appendChild(el("div", { class: "note" }, [icon("info", 16),
+      el("div", { html: "The grey <b>not attributable</b> bar is the higher-order term the " +
+        "first-order decomposition cannot assign. Most tools normalise it away." })]));
+    v.appendChild(why);
     return v;
   }
 
-  function viewFutures() {
-    const v = el("div", { class: "view" });
-    const sim = D.sim;
+  function keyd(text, color, dashed) {
+    const sw = el("i", { class: "kd" });
+    sw.style.borderTopColor = color;
+    if (dashed) sw.style.borderTopStyle = "dashed";
+    return el("span", { class: "kdw" }, [sw, el("span", { text: text })]);
+  }
 
-    const card = el("section", { class: "card" });
-    card.appendChild(el("div", { class: "card-head" }, [
+  function viewFutures() {
+    const C = window.ST_Charts, sim = D.sim;
+    const v = el("div", { class: "view" });
+    let active = 1;
+
+    const SCEN = [
+      { name: "Current dynamics", color: css("--ink-3"),
+        med: sim.base_med, lo: sim.base_lo, hi: sim.base_hi, risk: sim.base_risk,
+        note: "No intervention applied. The model's own dynamics, run forward." },
+      { name: "Engagement support", color: css("--indigo"),
+        med: sim.alt_med, lo: sim.alt_lo, hi: sim.alt_hi, risk: sim.alt_risk,
+        note: "A sustained engagement shift of one state unit, applied from now." }
+    ];
+
+    v.appendChild(el("section", { class: "lab-head" }, [
       el("div", {}, [
-        el("p", { class: "card-title", text: "Observed trajectory, then simulated futures" }),
-        el("p", { class: "card-sub", text: "Eight weeks forward from the last observation, 600 particles drawn from the current posterior." }),
+        el("h1", { class: "lab-t", text: "Explore possible futures" }),
+        el("p", { class: "panel-s", text: "Eight weeks forward from the last observation. " +
+          "600 particles drawn from the current posterior." }),
       ]),
       el("span", { class: "chip chip-simulated", text: "Model-generated" }),
     ]));
 
-    const scen = el("div", { class: "scenarios", style: "margin-bottom:1rem" });
-    const bBase = el("button", { type: "button", "aria-pressed": "false", text: "Baseline only" });
-    const bCmp = el("button", { type: "button", "aria-pressed": "true", text: "Compare: engagement support" });
-    scen.appendChild(bBase); scen.appendChild(bCmp);
-    card.appendChild(scen);
-
+    const picker = el("div", { class: "scen" });
     const chartHost = el("div", {});
-    function drawFuture() {
-      const series = [{ med: sim.base_med, lo: sim.base_lo, hi: sim.base_hi, color: css("--ink-3") }];
-      if (scenarioOn) series.push({ med: sim.alt_med, lo: sim.alt_lo, hi: sim.alt_hi, color: css("--indigo") });
-      chartHost.innerHTML = "";
-      chartHost.appendChild(futureChart({
-        obs: st.eng, simWeeks: sim.weeks, theta: theta, series: series,
-        label: "Observed engagement followed by simulated futures with 5th to 95th percentile bands."
-      }));
-      bBase.setAttribute("aria-pressed", String(!scenarioOn));
-      bCmp.setAttribute("aria-pressed", String(scenarioOn));
-    }
-    bBase.addEventListener("click", () => { scenarioOn = false; drawFuture(); drawRisk(); });
-    bCmp.addEventListener("click", () => { scenarioOn = true; drawFuture(); drawRisk(); });
-    card.appendChild(chartHost);
-    card.appendChild(el("div", { class: "legend" }, [
-      legend("observed (solid)", css("--ink")),
-      legend("baseline simulation (dashed)", css("--ink-3")),
-      legend("scenario simulation (dashed)", css("--indigo")),
-      legend("personal baseline θ", css("--amber"), true),
-      el("span", { text: "shaded = 5th–95th percentile of 600 particles" }),
-    ]));
-    card.appendChild(el("div", { class: "note sim", style: "margin-top:1rem" }, [
-      icon("beaker", 16),
-      el("div", { html: "<b>Model-generated scenario.</b> Solid is observed; everything past the boundary is simulated from the fitted dynamics. These are possible futures under the model's assumptions, not predictions or guarantees." }),
-    ]));
-    v.appendChild(card);
-    drawFuture();
+    const metrics = el("div", { class: "mstrip" });
+    const expl = el("div", { class: "note sim" });
 
-    // — intervention lab —
-    const lab = el("section", { class: "card" });
-    lab.appendChild(el("div", { class: "card-head" }, [
-      el("div", {}, [
-        el("p", { class: "card-title", text: "Intervention lab — engagement support, intensity 1.0" }),
-        el("p", { class: "card-sub", text: "Cumulative simulated risk over the next 8 weeks." }),
-      ]),
-      el("span", { class: "chip chip-simulated", text: "Hypothesis" }),
-    ]));
-    const cmp = el("div", { class: "stat-row", style: "margin-bottom:1rem" }, [
-      stat("Baseline, 8 weeks", pct(sim.base_risk[sim.base_risk.length - 1]), "no intervention applied", ""),
-      stat("Under scenario", pct(sim.alt_risk[sim.alt_risk.length - 1]), "model dynamics only", ""),
-      stat("Simulated difference", "−" + pct(sim.base_risk[sim.base_risk.length - 1] - sim.alt_risk[sim.alt_risk.length - 1]), "NOT an estimated effect", ""),
-    ]);
-    lab.appendChild(cmp);
-    const riskHost = el("div", {});
-    function drawRisk() {
-      riskHost.innerHTML = "";
-      riskHost.appendChild(riskChart(sim.weeks, sim.base_risk, scenarioOn ? sim.alt_risk : sim.base_risk));
+    function paint() {
+      picker.innerHTML = "";
+      SCEN.forEach(function (sc, i) {
+        const b = el("button", { type: "button", class: "scen-b",
+          "aria-pressed": String(i === active) }, [
+          el("span", { class: "scen-dot" }),
+          el("span", { class: "scen-n", text: sc.name }),
+          el("span", { class: "scen-r num", text: pct(sc.risk[sc.risk.length - 1]) }),
+        ]);
+        b.querySelector(".scen-dot").style.background = sc.color;
+        b.addEventListener("click", function () { active = i; paint(); });
+        picker.appendChild(b);
+      });
+
+      chartHost.innerHTML = "";
+      chartHost.appendChild(C.branchChart({
+        obs: st.eng, theta: theta,
+        branches: SCEN.map(function (sc, i) {
+          return { name: sc.name, color: sc.color, med: sc.med, lo: sc.lo, hi: sc.hi,
+                   active: i === active };
+        }),
+        label: "Observed engagement then two simulated scenario branches",
+      }));
+
+      const sc = SCEN[active];
+      metrics.innerHTML = "";
+      [["Projected state", fmt(sc.med[sc.med.length - 1]), "median at week +8"],
+       ["Cumulative risk", pct(sc.risk[sc.risk.length - 1]), "simulated, 8 weeks"],
+       ["Uncertainty", "+/- " + fmt((sc.hi[sc.hi.length - 1] - sc.lo[sc.lo.length - 1]) / 2),
+        "5th to 95th percentile"],
+       ["Horizon", "8 weeks", "600 particles"]
+      ].forEach(function (row) {
+        metrics.appendChild(el("div", { class: "mchip" }, [el("div", { class: "mchip-l" }, [
+          el("span", { class: "mchip-lbl", text: row[0] }),
+          el("span", { class: "mchip-val num", text: row[1] }),
+          el("span", { class: "mchip-sub", text: row[2] })])]));
+      });
+
+      expl.innerHTML = "";
+      expl.appendChild(icon("beaker", 16));
+      expl.appendChild(el("div", { html: "<b>Model-generated scenario, not a causal estimate.</b> " +
+        sc.note + " The dataset records no interventions, so the sensitivity is <em>assumed</em>, " +
+        "not fitted. Read this as what the model's dynamics imply, never as what an action " +
+        "would achieve for a real student." }));
     }
-    drawRisk();
-    lab.appendChild(riskHost);
-    lab.appendChild(el("div", { class: "note", style: "margin-top:1rem" }, [
-      icon("alert", 16),
-      el("div", { html: "<b>This is not a causal claim.</b> The dataset records no interventions, so the sensitivity matrix is <em>assumed</em>, not estimated from data. Read this as: <em>under the model's assumed transition dynamics, a sustained engagement shift of this size implies this trajectory.</em> It does not mean support would produce this outcome for this student." }),
-    ]));
-    v.appendChild(lab);
+    paint();
+
+    const panel = el("section", { class: "panel" });
+    panel.appendChild(picker);
+    panel.appendChild(chartHost);
+    panel.appendChild(metrics);
+    panel.appendChild(expl);
+    v.appendChild(panel);
     return v;
   }
 
@@ -736,7 +780,28 @@
       nav.appendChild(toDemo);
     }
     side.appendChild(nav);
-    side.appendChild(el("div", { class: "side-foot", html: "Synthetic cohort.<br>The model has never been run on real OULAD data." }));
+    // Twin status: what this Twin actually is, not just where you can navigate.
+    const cov = mode === "personal" ? 0 : 100;
+    const obsN = mode === "personal" ? 0 : st.t.length;
+    const status = el("div", { class: "side-status" }, [
+      el("p", { class: "ss-h", text: "Twin status" }),
+      el("div", { class: "ss-live" }, [
+        el("span", { class: "ss-dot" }),
+        el("span", { text: mode === "personal" ? "Initialised" : "Active" }),
+      ]),
+      el("div", { class: "ss-row" }, [el("span", { text: "Observations" }),
+        el("b", { text: obsN + " wks" })]),
+      el("div", { class: "ss-bar" }, [
+        el("i", { class: "ss-fill", style: "width:" + Math.min(100, obsN * 5) + "%" })]),
+      el("div", { class: "ss-row" }, [el("span", { text: "Data" }),
+        el("b", { text: mode === "personal" ? "none" : "synthetic" })]),
+      el("div", { class: "ss-row" }, [el("span", { text: "Inference" }),
+        el("b", { text: "laplace" })]),
+    ]);
+    side.appendChild(status);
+    side.appendChild(el("div", { class: "side-foot", html: mode === "personal"
+      ? "No observations collected.<br>Estimates are the cohort prior."
+      : "Synthetic cohort.<br>Never run on real OULAD data." }));
     const back = el("button", { type: "button", class: "side-foot", style: "text-align:left;width:100%", text: "← Back to site" });
     back.addEventListener("click", () => go(""));
     side.appendChild(back);
