@@ -89,13 +89,42 @@ def main() -> int:
     aq = alt.state_quantiles((0.05, 0.5, 0.95))
     pp = r.person_period[r.person_period["student_id"] == sid]
 
+    # A SWEEP over intervention magnitude, so the Intervention Lab slider reads
+    # off genuinely simulated futures instead of interpolating between two of
+    # them. Each stop is its own forward simulation with its own seed.
+    sweep = []
+    for delta in (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5):
+        sc = (
+            InterventionScenario.baseline()
+            if delta == 0.0
+            else InterventionScenario(
+                f"engagement support {delta}",
+                (Intervention("engagement_support", float(delta)),),
+            )
+        )
+        out_s = simulate_forward(
+            tr.current, theta, r.params, sc,
+            horizon=8, n_particles=600, hazard_params=hz,
+            rng=rng_for(cfg, f"web-sweep-{delta}"),
+        )
+        q = out_s.state_quantiles((0.05, 0.5, 0.95))
+        sweep.append({
+            "d": delta,
+            "med": [round(float(x), 4) for x in q["engagement_q50"]],
+            "lo": [round(float(x), 4) for x in q["engagement_q05"]],
+            "hi": [round(float(x), 4) for x in q["engagement_q95"]],
+            "risk": [round(float(x), 4) for x in out_s.cumulative_risk()],
+        })
+
     # A sample of INDIVIDUAL simulated particle paths, for the hero diagram's
     # fan of possible futures. Real trajectories, not paths interpolated between
     # quantiles - a fan drawn from interpolation would be a picture of a band
     # pretending to be a set of outcomes.
     rng_pick = np.random.default_rng(cfg.seed)
-    idx = rng_pick.choice(base.states.shape[0], size=min(24, base.states.shape[0]), replace=False)
+    idx = rng_pick.choice(base.states.shape[0], size=min(40, base.states.shape[0]), replace=False)
     particle_paths = [[round(float(v), 4) for v in base.states[i, :, 0]] for i in idx]
+    idx_a = rng_pick.choice(alt.states.shape[0], size=min(40, alt.states.shape[0]), replace=False)
+    alt_paths = [[round(float(v), 4) for v in alt.states[i, :, 0]] for i in idx_a]
 
     att = explain_trajectory(tr, r.params, dim=0).fillna(0)
 
@@ -133,8 +162,10 @@ def main() -> int:
             "alt_hi": [round(float(x), 4) for x in aq["engagement_q95"]],
             "base_risk": [round(float(x), 4) for x in base.cumulative_risk()],
             "particles": particle_paths,
+            "alt_particles": alt_paths,
             "alt_risk": [round(float(x), 4) for x in alt.cumulative_risk()],
         },
+        "sweep": sweep,
         "attrib": [
             {
                 "t": int(row["t"]),
@@ -169,6 +200,21 @@ def main() -> int:
         },
         "shrinkage": [round(float(x), 4)
                       for x in np.atleast_1d(r.params.setpoint_shrinkage)],
+    }
+
+    # The tier-1 features actually fed to the twin for this student, week by
+    # week. The Timeline shows these as the observation rail; without them the
+    # rail would have to invent activity it never saw.
+    feat = r.features[r.features["student_id"] == sid].sort_values("t")
+    obs_cols = [c for c in feat.columns if c not in ("student_id", "context_id", "t")]
+    payload["obs"] = {
+        "cols": obs_cols,
+        "rows": [
+            {"t": int(row["t"]),
+             "v": [round(float(row[c]), 4) for c in obs_cols]}
+            for _, row in feat.iterrows()
+        ],
+        "n": [int(x) for x in pp.sort_values("t")["n_observations"]],
     }
 
     # Cohort-level summary, for the "compared to everyone vs compared to

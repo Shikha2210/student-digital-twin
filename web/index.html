@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#06080A">
 <title>StudyTwin — a digital twin for every student</title>
-<meta name="description" content="StudyTwin learns what normal looks like for each student, updates that picture every week, and simulates how the coming weeks could unfold — carrying its own uncertainty throughout.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Ccircle cx=%2712%27 cy=%2712%27 r=%2711%27 fill=%27%230F5F58%27/%3E%3Ccircle cx=%2712%27 cy=%2712%27 r=%274%27 fill=%27%23F7F6F3%27/%3E%3C/svg%3E">
-<link rel="stylesheet" href="dash.css?v=1786698874">
-<link rel="stylesheet" href="onboarding.css?v=1786698874">
-<link rel="stylesheet" href="app.css?v=1786698874">
+<meta name="description" content="StudyTwin learns what normal looks like for one student, updates that picture every week, and simulates how the coming weeks could unfold — carrying its own uncertainty throughout.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Ccircle cx=%2712%27 cy=%2712%27 r=%2711%27 fill=%27%2306080A%27/%3E%3Ccircle cx=%2712%27 cy=%2712%27 r=%278%27 fill=%27none%27 stroke=%27%23C5883F%27 stroke-width=%271.2%27 stroke-dasharray=%272 2%27/%3E%3Ccircle cx=%2712%27 cy=%2712%27 r=%273.4%27 fill=%27%2354ADA5%27/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css?v=1786767800">
+<link rel="stylesheet" href="dash.css?v=1786767800">
+<link rel="stylesheet" href="onboarding.css?v=1786767800">
 </head>
 <body>
 
@@ -36,25 +38,26 @@
   <!-- ============================ HERO ============================ -->
   <section class="hero">
     <div class="page hero-grid">
-      <div>
-        <p class="eyebrow">Research prototype · synthetic data</p>
-        <h1 class="display">A digital twin for<br>every student.</h1>
-        <p class="display-sub"><em class="t">Understand</em> today. <em class="i">Explore</em> tomorrow.</p>
+      <div class="hero-copy">
+        <p class="eyebrow">Personal digital twin · research prototype</p>
+        <h1 class="display">A digital twin<br>for every <em class="t">student</em>.</h1>
+        <p class="display-sub"><em>Understand</em> today. <em>Explore</em> tomorrow.</p>
         <p class="lede">
-          Conventional analytics predicts students against each other. StudyTwin models how
-          <em>one</em> student's state evolves against their own normal — revising that picture each
-          week, and carrying its own uncertainty the whole way.
+          Conventional analytics scores students against each other. StudyTwin models how
+          <em>one</em> student's state evolves against their own normal — revising that picture
+          every week, and carrying its own uncertainty the whole way.
         </p>
         <div class="hero-cta">
           <a class="btn btn-primary" href="#/onboarding" data-go="onboarding">
             Create your Twin
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </a>
-          <a class="btn btn-ghost" href="#/app" data-go="app">Explore a demo Twin</a>
+          <a class="btn btn-ghost" href="#/app/home" data-go="app/home">Explore a demo Twin</a>
         </div>
-        <p class="card-sub" style="margin-top:.9rem">
-          The demo runs on a synthetic student with 20 weeks of observations.
-          A Twin you create starts empty — and says so.
+        <p class="hero-fine">
+          <b>The dial beside this is one real student.</b> Twenty observed weeks wrapped around
+          their own fitted baseline, then eight simulated futures — every mark is pipeline output
+          from a synthetic cohort. A Twin you create starts with zero observations, and says so.
         </p>
       </div>
 
@@ -71,7 +74,7 @@
     <div class="sec-narrow">
       <p class="eyebrow">How the Twin thinks</p>
       <h2 class="sec">Four moves, repeated every week.</h2>
-      <p class="lede">Select a stage. The diagram shows what changes.</p>
+      <p class="lede">Select a stage. One diagram changes rather than four cards appearing.</p>
     </div>
     <div id="vis-think"></div>
   </section>
@@ -103,7 +106,7 @@
       </div>
     </div>
 
-    <div id="vis-cohort" class="narrative" style="margin-top:2rem"></div>
+    <div id="vis-cohort" style="margin-top:2rem"></div>
 
     <div class="punch">
       <p>
@@ -130,10 +133,9 @@
 
     <div class="punch">
       <p>
-        Read those two carefully. The student on the <b>right</b> sits <b>lower</b> in absolute terms —
-        yet they are at their own normal. The student on the <b>left</b> scores <b>higher</b> and is
-        roughly a full unit <b>below</b> theirs. Context changes meaning, and only one of these two
-        warrants a conversation.
+        Read those two carefully. One sits <b>lower</b> in absolute terms yet is at their own normal.
+        The other scores <b>higher</b> and is roughly a full unit <b>below</b> theirs.
+        Context changes meaning, and only one of these two warrants a conversation.
       </p>
     </div>
   </section>
@@ -177,9 +179,9 @@
     </div>
     <div class="strip-vis" style="margin-top:1.5rem">
       <p class="sv-title">Observed trajectory, then simulated futures</p>
-      <p class="sv-sub">Solid is observed. Everything past the boundary is model-generated.</p>
+      <p class="sv-sub">Solid is observed. Everything past the boundary is dashed, hatched and model-generated.</p>
       <div id="vis-sim"></div>
-      <div class="note sim" style="margin-top:1rem">
+      <div class="note sim">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6.5L5.2 17.4A2 2 0 0 0 6.9 20h10.2a2 2 0 0 0 1.7-2.6L14 9.5V3M7.5 14h9"/></svg>
         <div>
           <b>Model-generated scenario — not a causal estimate.</b> The dataset records no interventions,
@@ -242,7 +244,7 @@
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6M10 3v6.5L5.2 17.4A2 2 0 0 0 6.9 20h10.2a2 2 0 0 0 1.7-2.6L14 9.5V3M7.5 14h9"/></svg>
             Intervenable
           </h3>
-          <p class="test">Test T3 <b style="color:var(--ink-3)">NOT IMPLEMENTED</b></p>
+          <p class="test">Test T3 <b style="color:var(--amber-b)">NOT IMPLEMENTED</b></p>
         </div>
         <p>Accepts a hypothetical action as a model input, structurally separate from any observation. The mechanism works; its stability across refits has not yet been tested.</p>
       </div>
@@ -347,7 +349,7 @@
           Create your Twin
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </a>
-        <a class="btn btn-ghost" href="#/app" data-go="app">Explore a demo Twin</a>
+        <a class="btn btn-ghost" href="#/app/home" data-go="app/home">Explore a demo Twin</a>
       </div>
     </div>
   </section>
@@ -366,9 +368,9 @@
 
 <div id="app" class="app" hidden></div>
 
-<script src="data.js?v=1786698874"></script>
-<script src="charts.js?v=1786698874"></script>
-<script src="onboarding.js?v=1786698874"></script>
-<script src="app.js?v=1786698874"></script>
+<script src="data.js?v=1786767800"></script>
+<script src="charts.js?v=1786767800"></script>
+<script src="onboarding.js?v=1786767800"></script>
+<script src="app.js?v=1786767800"></script>
 </body>
 </html>

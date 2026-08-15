@@ -204,7 +204,7 @@
     const { s, el } = X;
     const W = 340, H = 340, CX = 170, CY = 170;
     const cov = coverage();
-    const TEAL = "#22D3B8", TEAL_D = "#0A9C8A", AMB = "#F0A93C", IND = "#7B72FF", MUT = "#6E858C";
+    const TEAL = "#7FD8CC", TEAL_D = "#54ADA5", AMB = "#E7AE63", IND = "#9AA6F0", MUT = "#6C7A83";
     const g = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "ob-tw-svg", "aria-hidden": "true" });
 
     const has = {
@@ -317,6 +317,13 @@
       }
       host.appendChild(box);
     }
+
+    // Anchored at the bottom of the column so the honesty statement is always
+    // the last thing in view, not something that scrolls away with the answers.
+    host.appendChild(el("p", { class: "ob-aside-foot", html:
+      "Everything you enter stays in this browser. None of it is model input — " +
+      "the inference model learns from weekly behavioural observations, which this " +
+      "prototype cannot yet collect." }));
   }
 
   /* ============================================================ CONTROLS */
@@ -693,7 +700,14 @@
     const main = el("div", { class: "ob2-main" });
     const card = el("div", { class: "ob2-card" });
     card.appendChild(el("p", { class: "eyebrow", text: st.eyebrow }));
-    card.appendChild(el("h1", { class: "ob2-q", text: st.title }));
+    // Step index sits large and quiet beside the question rather than in a
+    // progress bar: it answers "how far in am I" without competing for attention.
+    card.appendChild(el("div", { class: "ob2-qrow" }, [
+      el("h1", { class: "ob2-q", text: st.title }),
+      step > 0 ? el("span", { class: "ob2-idx",
+        text: String(step).padStart(2, "0") + " / " + String(STEPS.length - 1).padStart(2, "0") })
+        : el("span", {}),
+    ]));
     if (st.lede) card.appendChild(el("p", { class: "lede", text: st.lede }));
     card.appendChild(body());
 
