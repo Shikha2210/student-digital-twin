@@ -8,9 +8,10 @@
 <title>StudyTwin — a digital twin for every student</title>
 <meta name="description" content="StudyTwin learns what normal looks like for one student, updates that picture every week, and simulates how the coming weeks could unfold — carrying its own uncertainty throughout.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Ccircle cx=%2712%27 cy=%2712%27 r=%2711%27 fill=%27%2306080A%27/%3E%3Ccircle cx=%2712%27 cy=%2712%27 r=%278%27 fill=%27none%27 stroke=%27%23C5883F%27 stroke-width=%271.2%27 stroke-dasharray=%272 2%27/%3E%3Ccircle cx=%2712%27 cy=%2712%27 r=%273.4%27 fill=%27%2354ADA5%27/%3E%3C/svg%3E">
-<link rel="stylesheet" href="app.css?v=1786767800">
-<link rel="stylesheet" href="dash.css?v=1786767800">
-<link rel="stylesheet" href="onboarding.css?v=1786767800">
+<link rel="stylesheet" href="app.css?v=1786815500">
+<link rel="stylesheet" href="dash.css?v=1786815500">
+<link rel="stylesheet" href="loop.css?v=1786815500">
+<link rel="stylesheet" href="onboarding.css?v=1786815500">
 </head>
 <body>
 
@@ -74,7 +75,9 @@
     <div class="sec-narrow">
       <p class="eyebrow">How the Twin thinks</p>
       <h2 class="sec">Four moves, repeated every week.</h2>
-      <p class="lede">Select a stage. One diagram changes rather than four cards appearing.</p>
+      <p class="lede">Select a stage and one diagram changes, because these are four
+        moves of a single object rather than four separate features. Every number
+        below is stored output for a real week of a real run.</p>
     </div>
     <div id="vis-think"></div>
   </section>
@@ -141,29 +144,36 @@
   </section>
 
   <!-- ============================ TIME ============================ -->
-  <section class="sec page">
-    <div class="sec-narrow">
-      <p class="eyebrow">Time</p>
-      <h2 class="sec">The twin remembers.</h2>
-      <p>
-        Each week the model does two things, always in this order. It <b>predicts</b> — pushing last
-        week's state forward, drifting toward the student's baseline, widening its uncertainty because
-        time has passed. Then it <b>updates</b> — folding in what actually happened, and narrowing again.
-        Last week's answer becomes this week's starting point.
-      </p>
-      <p>
-        That loop is not a metaphor. It is verified: updating recursively from the previous state gives
-        results identical to replaying every week from scratch, to <span class="num">0.00e+00</span>.
-        The state is a sufficient statistic for the student's history.
-      </p>
-      <div class="pipeline" role="list">
-        <span role="listitem">observations</span><i>→</i>
-        <span role="listitem">predict</span><i>→</i>
-        <span role="listitem">update</span><i>→</i>
-        <span role="listitem">state</span><i>→</i>
-        <span role="listitem">risk readout</span><i>→</i>
-        <span role="listitem">simulated futures</span>
+  <!-- Two columns on purpose. The right half is not decoration filling a gap:
+       it is the same week the sentences on the left are describing, drawn from
+       the model's own stored prior and posterior. -->
+  <section class="sec page" id="time">
+    <div class="sec-head-row">
+      <div class="sec-narrow" style="margin-bottom:0">
+        <p class="eyebrow">Time</p>
+        <h2 class="sec">The twin remembers.</h2>
+        <p class="lede" style="margin-bottom:0">
+          Each week the model does two things, always in this order. Scroll, or pick
+          a week on the rail, and watch the belief move.
+        </p>
       </div>
+      <div class="time-fact">
+        <p class="lbl">Recursive equals full replay</p>
+        <p class="time-v num">0.00e+00</p>
+        <p class="time-d">Test T1. The state is a sufficient statistic for the
+          student's history, so nothing is replayed.</p>
+      </div>
+    </div>
+
+    <div id="vis-memory"></div>
+
+    <div class="pipeline" role="list">
+      <span role="listitem">observations</span><i>&rarr;</i>
+      <span role="listitem">predict</span><i>&rarr;</i>
+      <span role="listitem">update</span><i>&rarr;</i>
+      <span role="listitem">state</span><i>&rarr;</i>
+      <span role="listitem">risk readout</span><i>&rarr;</i>
+      <span role="listitem">simulated futures</span>
     </div>
   </section>
 
@@ -368,9 +378,13 @@
 
 <div id="app" class="app" hidden></div>
 
-<script src="data.js?v=1786767800"></script>
-<script src="charts.js?v=1786767800"></script>
-<script src="onboarding.js?v=1786767800"></script>
-<script src="app.js?v=1786767800"></script>
+<!-- Offline snapshot. Used only when the API is unreachable, and labelled
+     as a snapshot in the UI when it is. -->
+<script src="data.js?v=1786815500"></script>
+<script src="api.js?v=1786815500"></script>
+<script src="charts.js?v=1786815500"></script>
+<script src="loop.js?v=1786815500"></script>
+<script src="onboarding.js?v=1786815500"></script>
+<script src="app.js?v=1786815500"></script>
 </body>
 </html>

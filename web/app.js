@@ -13,7 +13,13 @@
 (function () {
   "use strict";
 
-  const D = window.STUDYTWIN_DATA;
+  /* The view model, resolved at boot by ST_Api from either the live API or
+     the bundled offline snapshot. Both produce the identical shape, so nothing
+     below this line knows which transport it got. */
+  let D = null;
+  let st = null, theta = 0, lastEng = 0, lastSd = 0, dev = 0, lastHz = 0, NW = 0;
+  let currentWeek = 0;
+  let BOOT = { mode: "loading", error: null, hint: null };
   const C = window.ST_Charts;
   const NS = "http://www.w3.org/2000/svg";
   const MONO = "Cascadia Mono, Consolas, ui-monospace, monospace";
@@ -65,8 +71,6 @@
     "state.eng_sd": "engagement uncertainty series",
     "hazard": "weekly hazard series",
     "sim.base_risk": "baseline simulation",
-    "metrics": "evaluation metrics",
-    "cohort.students": "cohort size",
   };
   const dig = (o, p) => p.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
   function contractViolations() {
@@ -125,16 +129,21 @@
     return n;
   }
 
-  /* ---------------------------------------------- the subject ---- */
-  const st = D.state, theta = D.student.theta[0];
-  const lastEng = st.eng[st.eng.length - 1], lastSd = st.eng_sd[st.eng_sd.length - 1];
-  const dev = lastEng - theta;
-  const lastHz = D.hazard[D.hazard.length - 1];
-  const NW = st.t.length;
-
-  /* Shared across screens on purpose: switching views must not feel like
-     switching applications, and the selected week is part of "where we are". */
-  let currentWeek = NW - 1;
+  /* ---------------------------------------------- the subject ----
+     Bound once per boot. `currentWeek` is shared across screens on purpose:
+     switching views must not feel like switching applications, and the
+     selected week is part of "where we are". */
+  function bind(vm) {
+    D = vm;
+    st = D.state;
+    theta = D.student.theta[0];
+    lastEng = st.eng[st.eng.length - 1];
+    lastSd = st.eng_sd[st.eng_sd.length - 1];
+    dev = lastEng - theta;
+    lastHz = D.hazard[D.hazard.length - 1];
+    NW = st.t.length;
+    currentWeek = NW - 1;
+  }
 
   function keyd(text, color, dashed, band) {
     const sw = el("i", { class: "kd" + (band ? " band" : "") });
@@ -451,7 +460,7 @@
     own.forEach((x) => { run = x < theta ? run + 1 : 0; longest = Math.max(longest, run); });
     const nBelow = own.filter((x) => x < theta).length;
 
-    const thetas = (D.cohort_states || []).map((c) => c.th).sort((a, b) => a - b);
+    const thetas = (D.cohort_states || []).map((c) => c.theta).sort((a, b) => a - b);
     const rank = thetas.length ? thetas.filter((x) => x < theta).length / thetas.length : null;
 
     v.appendChild(el("div", { class: "view-head" }, [
@@ -794,11 +803,14 @@
     ]));
 
     const manifest = el("div", { class: "manifest" });
-    [["Students", String(D.cohort.students), "trajectories fitted"],
-     ["Person-period rows", String(D.cohort.rows), "forward-chained"],
-     ["Events", String(D.cohort.events), pct(D.cohort.rate, 1) + " of rows"],
-     ["Contexts", String(D.cohort.contexts), "presentations"],
+    const co = D.cohort || {};
+    [["Students", co.students == null ? "\u2014" : String(co.students), "trajectories fitted"],
+     ["Person-period rows", co.rows == null ? "\u2014" : String(co.rows), "forward-chained"],
+     ["Events", co.events == null ? "\u2014" : String(co.events),
+      co.rate == null ? "positives in evaluation" : pct(co.rate, 1) + " of rows"],
      ["Run seed", String(D.provenance.seed), "derived per purpose"],
+     ["Model version", D.provenance.model_version || "\u2014",
+      D.provenance.code_revision ? "code " + D.provenance.code_revision : "revision unknown"],
      ["Inference", "Laplace", "approximate Gaussian filter"],
     ].forEach((row) => {
       manifest.appendChild(el("div", { class: "mf" }, [
@@ -822,9 +834,10 @@
       el("th", { text: "Model" }), el("th", { text: "AUC" }),
       el("th", { text: "Brier" }), el("th", { text: "ECE" }), el("th", { text: "n" })])]));
     const tbody = el("tbody");
-    D.metrics.forEach((m) => {
-      const tr = el("tr", m.name === "twin_state" ? { class: "hl" } : {});
-      [m.name.replace(/_/g, " "), fmt(m.auc, 3), fmt(m.brier, 4), fmt(m.ece, 4), String(m.n)]
+    (D.metrics || []).forEach((m) => {
+      const tr = el("tr", m.model_name === "twin_state" ? { class: "hl" } : {});
+      [m.model_name.replace(/_/g, " "), fmt(m.auc, 3), fmt(m.brier, 4), fmt(m.ece, 4),
+       String(m.n)]
         .forEach((c) => tr.appendChild(el("td", { class: "num", text: c })));
       tbody.appendChild(tr);
     });
@@ -848,12 +861,13 @@
     ct.appendChild(el("thead", {}, [el("tr", {}, [
       el("th", { text: "Control" }), el("th", { text: "AUC" }), el("th", { text: "Verdict" })])]));
     const cbody = el("tbody");
-    D.controls.forEach((c) => {
+    (D.controls || []).forEach((c) => {
       const tr = el("tr", {});
-      tr.appendChild(el("td", { text: c.c.replace(/_/g, " ") }));
+      tr.appendChild(el("td", { text: c.control.replace(/_/g, " ") }));
       tr.appendChild(el("td", { class: "num", text: fmt(c.auc, 3) }));
-      const cls = c.v === "COLLAPSED" ? "ok" : c.v === "SURVIVED" ? "warn" : "";
-      tr.appendChild(el("td", {}, [el("span", { class: "verdict " + cls, text: c.v })]));
+      const cls = c.verdict === "COLLAPSED" ? "ok" : c.verdict === "SURVIVED" ? "warn" : "";
+      tr.appendChild(el("td", {}, [
+        el("span", { class: "verdict " + cls, text: c.verdict })]));
       cbody.appendChild(tr);
     });
     ct.appendChild(cbody);
@@ -881,8 +895,9 @@
       b.appendChild(wrap);
       return b;
     };
-    cw.appendChild(mk("Available in this run", D.cohort.coverage_avail, "chip-observed"));
-    cw.appendChild(mk("Declared unavailable", D.cohort.coverage_missing, ""));
+    const covr = D.coverage || { available: [], unavailable: [] };
+    cw.appendChild(mk("Available in this run", covr.available, "chip-observed"));
+    cw.appendChild(mk("Declared unavailable", covr.unavailable, ""));
     cov.appendChild(cw);
     cov.appendChild(el("div", { class: "note" }, [icon("info", 16),
       el("div", { html: "Physiological and multimodal sensing appear in the schema as " +
@@ -1087,6 +1102,11 @@
         el("b", { text: "laplace" })]),
       el("div", { class: "ss-row" }, [el("span", { text: "Baseline θ" }),
         el("b", { text: personal ? "not fitted" : fmt(theta) })]),
+      el("div", { class: "ss-row" }, [el("span", { text: "Source" }),
+        el("b", { text: BOOT.mode === "api" ? "live api" : "snapshot" })]),
+      el("div", { class: "ss-row" }, [el("span", { text: "Run" }),
+        el("b", { text: D.provenance.run_id
+          ? D.provenance.run_id.slice(0, 8) : "bundled" })]),
     ]));
 
     side.appendChild(el("div", { class: "side-foot", html: personal
@@ -1128,9 +1148,21 @@
          el("span", { class: "chip", text: "Local to this device" })]
       : [el("span", { class: "chip chip-synthetic" }, [el("i", { class: "chip-dot" }),
           el("span", { text: D.provenance.synthetic ? "Synthetic data" : D.provenance.dataset })]),
-         el("span", { class: "chip", text: "seed " + D.provenance.seed })]));
+         el("span", { class: "chip", text: "seed " + D.provenance.seed }),
+         sourceChip()]));
     main.appendChild(top);
 
+    // Say it at the top of every screen, not in a tooltip: a snapshot that
+    // silently stands in for live data is the failure this layer exists to stop.
+    if (BOOT.mode === "snapshot") {
+      main.appendChild(el("div", { class: "src-banner" }, [
+        icon("alert", 15),
+        el("span", { html: "<b>Offline snapshot.</b> " +
+          (D.fallback_reason || "The API did not respond.") +
+          " These are real pipeline numbers from a bundled export, not live " +
+          "results. <code>" + (D.fallback_hint || "") + "</code>" }),
+      ]));
+    }
     main.appendChild(el("div", { class: "mode-banner " + (personal ? "personal" : "demo") }, [
       icon(personal ? "user" : "info", 15),
       el("span", { html: personal
@@ -1262,91 +1294,281 @@
     host.appendChild(wrap);
   }
 
-  /* Four moves, one diagram that changes. Understanding a pipeline by
-     watching one object change beats reading four cards about it. */
+  /* ============================================================
+     FOUR MOVES  -  one interactive system diagram
+
+     Not four cards. Selecting a stage changes what ONE diagram
+     emphasises, because the claim is that these are four moves of a
+     single object rather than four separate features.
+
+     `Run the next week` advances the underlying week and walks the
+     four stages in order, so the loop is watched rather than read.
+     ============================================================ */
   const STAGES = [
-    { n: "Observe", d: "New learning signals arrive.",
-      note: "Silence is a signal too. A week with no activity is evidence, not a gap." },
-    { n: "Understand", d: "Estimate where the student is now, and how sure we are.",
-      note: "The estimate is a distribution. Certainty is part of the answer, not a footnote." },
-    { n: "Update", d: "Last week's belief becomes this week's starting point.",
-      note: "Verified: recursive updating equals replaying the full history, to 0.00e+00." },
-    { n: "Explore", d: "The state is generative, so it can be run forward.",
-      note: "Many futures with honest spread. Not a prediction, and never a guarantee." },
+    { n: "Observe",
+      d: "New learning signals arrive for the week.",
+      note: "Silence is a signal too. A week with no activity is evidence, not a gap - "
+          + "which is why the submission channel is Bernoulli rather than a missing count." },
+    { n: "Predict",
+      d: "Push last week's state forward and widen the uncertainty.",
+      note: "The state drifts toward the student's own baseline at a fitted rate, and the "
+          + "interval widens because a week has passed and nothing has been seen yet." },
+    { n: "Update",
+      d: "Fold in what actually happened; the interval narrows.",
+      note: "Evidence pulls the distribution toward what was observed. How far it moves "
+          + "depends on how much the model trusts that channel." },
+    { n: "State",
+      d: "The posterior becomes next week's starting point.",
+      note: "Verified: updating recursively equals replaying the whole history from "
+          + "scratch, to 0.00e+00. That is test T1, and it is what makes the state a twin "
+          + "rather than a rolling feature window." },
   ];
 
   function thinkSection(host) {
-    const rail = el("div", { class: "stages", role: "tablist" });
-    const body = el("div", { class: "stage-body" });
-    const vis = el("div", {});
+    let stage = 0;
+    let week = Math.min(NW - 1, Math.max(1, NW - 3));
+    let timer = null;
+
+    const rail = el("div", { class: "stages", role: "tablist",
+      "aria-label": "Model stages" });
+    const body = el("div", { class: "loop-body" });
+    const vis = el("div", { class: "loop-vis" });
     const note = el("p", { class: "stage-say" });
-    body.appendChild(vis); body.appendChild(note);
+    const meta = el("div", { class: "loop-meta" });
+    body.appendChild(vis);
+    body.appendChild(el("div", { class: "loop-foot" }, [note, meta]));
 
-    function draw(i) {
-      const W = 1000, H = 230, CX = 500, CY = 112;
-      const g = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img",
-        "aria-label": STAGES[i].n + ": " + STAGES[i].d, style: "width:100%;height:auto" });
-      const cTeal = css("--teal"), cTealB = css("--teal-b"), cAmber = css("--amber"),
-            cIndigo = css("--indigo-b"), cInk = css("--ink"), cInk4 = css("--ink-4");
-
-      g.appendChild(s("line", { x1: 40, x2: W - 40, y1: CY, y2: CY, stroke: cAmber,
-        "stroke-width": 1.2, "stroke-dasharray": "6 5", opacity: i === 1 ? .95 : .22 }));
-      for (let k = 0; k < 13; k++) {
-        const x = 60 + k * 24, on = i === 0;
-        g.appendChild(s("circle", { cx: x, cy: CY + Math.sin(k * 1.05) * 34, r: on ? 3.6 : 2.2,
-          fill: cInk, "fill-opacity": on ? .8 : .16 }));
-      }
-      (i === 1 ? [64, 44] : [40]).forEach((r, j) => g.appendChild(s("circle", {
-        cx: CX, cy: CY, r: r, fill: "none", stroke: cTealB, "stroke-width": 1,
-        "stroke-opacity": i === 1 ? .5 - j * .2 : .18 })));
-      g.appendChild(s("circle", { cx: CX, cy: CY, r: i >= 1 ? 9 : 5.5, fill: cTeal,
-        "fill-opacity": i >= 1 ? 1 : .35 }));
-      if (i === 2) {
-        g.appendChild(s("path", { d: "M " + (CX - 130) + " " + CY + " Q " + (CX - 66) + " " +
-          (CY - 66) + " " + (CX - 12) + " " + CY, fill: "none", stroke: cTealB,
-          "stroke-width": 1.6, "stroke-dasharray": "5 4" }));
-        g.appendChild(s("circle", { cx: CX - 130, cy: CY, r: 5.5, fill: cTeal, "fill-opacity": .35 }));
-      }
-      for (let k = 0; k < 13; k++) {
-        const on = i === 3, spread = (k / 12 - .5) * (on ? 176 : 34);
-        g.appendChild(s("path", {
-          d: "M " + (CX + 12) + " " + CY + " C " + (CX + 130) + " " + CY + ", " +
-             (W - 200) + " " + (CY + spread) + ", " + (W - 56) + " " + (CY + spread),
-          fill: "none", stroke: cIndigo, "stroke-width": 1,
-          "stroke-opacity": on ? .42 : .09, "stroke-dasharray": "4 4" }));
-      }
-      const lab = (x, y, t, col, anchor) => g.appendChild((function () {
-        const n = s("text", { x: x, y: y, fill: col, "font-size": 10.5, "font-family": MONO,
-          "letter-spacing": "1.4", "text-anchor": anchor || "start" });
-        n.textContent = t; return n;
-      })());
-      lab(50, H - 14, "OBSERVATIONS", i === 0 ? cInk : cInk4);
-      lab(CX, 24, "STATE", i === 1 || i === 2 ? cTealB : cInk4, "middle");
-      lab(W - 50, H - 14, "SIMULATED FUTURES", i === 3 ? cIndigo : cInk4, "end");
-      return g;
+    function frame() {
+      const att = D.attrib[week] || {};
+      const prevAtt = D.attrib[week - 1];
+      const prev = {
+        mean: prevAtt ? prevAtt.post : st.eng[Math.max(week - 1, 0)],
+        sd: (prevAtt && prevAtt.post_sd) || st.eng_sd[Math.max(week - 1, 0)],
+      };
+      // A run ingested before prior_sd existed has no PREDICT interval. Rather
+      // than invent one, fall back to the posterior SD and say so in the meta line.
+      const havePrior = att.prior_sd !== undefined && att.prior_sd !== null;
+      return {
+        theta: theta, week: week, stage: stage, hazard: D.hazard[week],
+        prev: prev,
+        prior: {
+          mean: att.prior !== undefined ? att.prior : st.eng[week],
+          sd: havePrior ? att.prior_sd : st.eng_sd[week],
+        },
+        post: {
+          mean: att.post !== undefined ? att.post : st.eng[week],
+          sd: (att.post_sd !== undefined && att.post_sd !== null)
+            ? att.post_sd : st.eng_sd[week],
+        },
+        obs: (D.obs && D.obs.rows && D.obs.rows[week])
+          ? channelsAt(week) : {},
+        havePrior: havePrior,
+      };
     }
 
-    function select(i) {
-      Array.prototype.forEach.call(rail.children, (c, k) =>
-        c.setAttribute("aria-pressed", String(k === i)));
+    function channelsAt(w) {
+      // The decomposition names the channels that actually moved the state
+      // this week, with their contributions. Those ARE the observations the
+      // filter used, so no separate source is needed.
+      const rec = D.attrib[w];
+      return rec ? rec.ch : {};
+    }
+
+    function paint() {
+      const f = frame();
+      Array.prototype.forEach.call(rail.children, (c, k) => {
+        c.setAttribute("aria-pressed", String(k === stage));
+      });
       vis.innerHTML = "";
-      vis.appendChild(draw(i));
-      note.textContent = STAGES[i].note;
+      vis.appendChild(C.modelLoop(f));
+      note.textContent = STAGES[stage].note;
+
+      meta.innerHTML = "";
+      meta.appendChild(el("span", { class: "lbl",
+        text: "Week " + String(week).padStart(2, "0") + " of " + NW }));
+      meta.appendChild(el("span", { class: "loop-num", html:
+        "predict <b class='num'>±" + fmt(1.96 * f.prior.sd) + "</b>" +
+        "<i>→</i>update <b class='num'>±" + fmt(1.96 * f.post.sd) + "</b>" }));
+      if (!f.havePrior) {
+        meta.appendChild(el("span", { class: "loop-warn",
+          text: "prediction interval not stored for this run" }));
+      }
     }
 
     STAGES.forEach((stg, i) => {
-      const b = el("button", { type: "button", class: "stage-btn", "aria-pressed": String(i === 0) }, [
+      const b = el("button", { type: "button", class: "stage-btn",
+        "aria-pressed": String(i === 0) }, [
         el("span", { class: "stage-n", text: String(i + 1).padStart(2, "0") }),
         el("span", { class: "stage-t", text: stg.n }),
+        el("span", { class: "stage-d", text: stg.d }),
       ]);
-      b.addEventListener("click", () => select(i));
-      b.addEventListener("pointerenter", () => select(i));
-      b.addEventListener("focus", () => select(i));
+      b.addEventListener("click", () => { stop(); stage = i; paint(); });
+      b.addEventListener("focus", () => { stop(); stage = i; paint(); });
       rail.appendChild(b);
     });
-    host.appendChild(rail);
+
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+      runBtn.classList.remove("is-running");
+      runBtn.querySelector("span").textContent = "Run the next week";
+    }
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const runBtn = el("button", { type: "button", class: "btn btn-ghost loop-run" },
+      [el("span", { text: "Run the next week" }), icon("refresh", 16)]);
+    runBtn.addEventListener("click", () => {
+      if (timer) { stop(); return; }
+      week = week + 1 >= NW ? 1 : week + 1;
+      stage = 0;
+      paint();
+      if (reduced) { stage = 3; paint(); return; }
+      runBtn.classList.add("is-running");
+      runBtn.querySelector("span").textContent = "Running…";
+      timer = setInterval(() => {
+        if (stage >= 3) { stop(); return; }
+        stage += 1;
+        paint();
+      }, 850);
+    });
+
+    host.appendChild(el("div", { class: "loop-head" }, [rail, runBtn]));
     host.appendChild(body);
-    select(0);
+    paint();
+  }
+
+  /* ============================================================
+     THE TWIN REMEMBERS  -  scroll-driven, two columns
+
+     Left: the six sentences of the loop, each one a scroll step.
+     Right: the belief for one week, revealed step by step, plus a
+     vertical week rail so time is directly selectable.
+
+     Scroll drives the step because the argument IS sequential. It
+     degrades to a static, fully-revealed diagram under
+     prefers-reduced-motion.
+     ============================================================ */
+  const MEMORY_STEPS = [
+    ["Last week's answer becomes this week's starting point.",
+     "The twin does not re-read the term. It starts from the posterior it "
+     + "finished with, which is the whole content of the word <em>remembers</em>."],
+    ["It predicts.",
+     "The state is pushed forward through the transition and drifts toward this "
+     + "student's own baseline at a fitted rate."],
+    ["Uncertainty widens.",
+     "A week has passed and nothing has been observed yet, so the interval grows "
+     + "by the process noise. This widening is the model's own, not an illustration."],
+    ["An observation arrives.",
+     "The week's canonical channels enter as evidence. A zero is a datum here, "
+     + "not a gap."],
+    ["It updates, and uncertainty narrows.",
+     "The distribution contracts toward what was seen. How far depends on how "
+     + "much the model trusts each channel."],
+    ["This week's state.",
+     "Which becomes next week's starting point, and the loop closes."],
+  ];
+
+  function memorySection(host) {
+    let week = NW - 1;
+    let step = 0;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const wrap = el("div", { class: "mem" });
+    const left = el("ol", { class: "mem-steps" });
+    const right = el("div", { class: "mem-vis" });
+    const stage = el("div", { class: "mem-stage" });
+    const railHost = el("div", { class: "mem-rail" });
+    right.appendChild(el("div", { class: "mem-panel" }, [railHost, stage]));
+
+    MEMORY_STEPS.forEach((sp, i) => {
+      const li = el("li", { class: "mem-step", "data-step": String(i) }, [
+        el("span", { class: "mem-n", text: String(i + 1).padStart(2, "0") }),
+        el("div", {}, [
+          el("p", { class: "mem-t", text: sp[0] }),
+          el("p", { class: "mem-d", html: sp[1] }),
+        ]),
+      ]);
+      // Clicking SCROLLS to the step rather than setting it directly. The step
+      // is a function of scroll position, so a click that set it without moving
+      // the page would be immediately overridden by the next observer callback -
+      // the two controls would fight, and scroll would win.
+      li.addEventListener("click", () => {
+        if (reduced) { setStep(i); return; }
+        li.scrollIntoView({ behavior: "smooth", block: "center" });
+        setStep(i);
+      });
+      left.appendChild(li);
+    });
+
+    function frameFor(w) {
+      const att = D.attrib[w] || {};
+      const prevAtt = D.attrib[w - 1];
+      return {
+        theta: theta, week: w, step: reduced ? 5 : step,
+        prev: {
+          mean: prevAtt ? prevAtt.post : st.eng[Math.max(w - 1, 0)],
+          sd: (prevAtt && prevAtt.post_sd) || st.eng_sd[Math.max(w - 1, 0)],
+        },
+        prior: {
+          mean: att.prior !== undefined ? att.prior : st.eng[w],
+          sd: (att.prior_sd !== undefined && att.prior_sd !== null)
+            ? att.prior_sd : st.eng_sd[w],
+        },
+        post: {
+          mean: att.post !== undefined ? att.post : st.eng[w],
+          sd: (att.post_sd !== undefined && att.post_sd !== null)
+            ? att.post_sd : st.eng_sd[w],
+        },
+      };
+    }
+
+    function paint() {
+      stage.innerHTML = "";
+      stage.appendChild(C.beliefEvolution(frameFor(week)));
+      railHost.innerHTML = "";
+      const rail = C.weekRail({
+        n: NW, selected: week,
+        above: st.eng.map((v) => v >= theta),
+      });
+      rail.style.cursor = "pointer";
+      rail.addEventListener("click", (e) => { week = rail.pick(e.clientY); paint(); });
+      railHost.appendChild(rail);
+      Array.prototype.forEach.call(left.children, (li, i) => {
+        li.setAttribute("aria-current", String(i === step));
+      });
+    }
+
+    function setStep(i) {
+      const next = Math.max(0, Math.min(MEMORY_STEPS.length - 1, i));
+      if (next === step) return;
+      step = next;
+      paint();
+    }
+
+    wrap.appendChild(left);
+    wrap.appendChild(right);
+    host.appendChild(wrap);
+    paint();
+
+    if (!reduced && "IntersectionObserver" in window) {
+      // Scroll progress selects the step. The observer is only a cheap trigger:
+      // when anything crosses the band we recompute which step is NEAREST the
+      // viewport centre. Taking whichever entry happened to fire last is
+      // non-deterministic when two items are in the band at once, and it made
+      // the active step disagree with what the reader is looking at.
+      const pickNearest = () => {
+        const mid = window.innerHeight / 2;
+        let best = 0, bestD = Infinity;
+        Array.prototype.forEach.call(left.children, (li, i) => {
+          const r = li.getBoundingClientRect();
+          const d = Math.abs((r.top + r.bottom) / 2 - mid);
+          if (d < bestD) { bestD = d; best = i; }
+        });
+        setStep(best);
+      };
+      const io = new IntersectionObserver(pickNearest,
+        { rootMargin: "-40% 0px -40% 0px", threshold: 0 });
+      Array.prototype.forEach.call(left.children, (li) => io.observe(li));
+    }
   }
 
   /** Same student, two questions. Real cohort values on both axes. */
@@ -1355,7 +1577,8 @@
     if (!pts.length) { host.appendChild(emptyState("No cohort summary in this data file", "")); return; }
     const W = 1000, H = 300, L = 62, R = 30, T = 26, B = 46;
     const x0 = L, x1 = W - R, y0 = T, y1 = H - B;
-    const xs = pts.map((p) => p.m), ys = pts.map((p) => p.last - p.th);
+    const xs = pts.map((p) => p.mean_state);
+    const ys = pts.map((p) => p.last_state - p.theta);
     const xlo = Math.min.apply(null, xs) - .2, xhi = Math.max.apply(null, xs) + .2;
     const ylo = Math.min.apply(null, ys) - .2, yhi = Math.max.apply(null, ys) + .2;
     const X = (v) => x0 + ((v - xlo) / (xhi - xlo)) * (x1 - x0);
@@ -1369,12 +1592,12 @@
     g.appendChild(s("line", { x1: x0, x2: x1, y1: y1, y2: y1, stroke: cLine }));
     g.appendChild(s("line", { x1: x0, x2: x0, y1: y0, y2: y1, stroke: cLine }));
     pts.forEach((p) => {
-      const d0 = p.last - p.th, me = p.id === D.student.id;
-      g.appendChild(s("circle", { cx: X(p.m), cy: Y(d0), r: me ? 6 : 2.6,
-        fill: me ? css("--coral-b") : (d0 >= 0 ? css("--teal") : css("--coral")),
-        "fill-opacity": me ? 1 : .4 }));
-      if (me) g.appendChild(s("circle", { cx: X(p.m), cy: Y(d0), r: 12, fill: "none",
-        stroke: css("--coral-b"), "stroke-width": 1, "stroke-opacity": .55 }));
+      const d0 = p.last_state - p.theta, isMe = p.student_id === D.student.id;
+      g.appendChild(s("circle", { cx: X(p.mean_state), cy: Y(d0), r: isMe ? 6 : 2.6,
+        fill: isMe ? css("--coral-b") : (d0 >= 0 ? css("--teal") : css("--coral")),
+        "fill-opacity": isMe ? 1 : .4 }));
+      if (isMe) g.appendChild(s("circle", { cx: X(p.mean_state), cy: Y(d0), r: 12,
+        fill: "none", stroke: css("--coral-b"), "stroke-width": 1, "stroke-opacity": .55 }));
     });
     const lab = (x, y, t, col, anchor) => {
       const n = s("text", { x: x, y: y, fill: col, "font-size": 10.5, "font-family": MONO,
@@ -1383,25 +1606,35 @@
     };
     lab(x0, H - 14, "AVERAGE ACTIVITY  →  how they compare to everyone", cInk4);
     lab(x0 - 8, y0 - 10, "DEVIATION FROM OWN BASELINE", cInk4);
-    lab(X(D.student.id ? (D.cohort_states.find((p) => p.id === D.student.id) || {}).m || 0 : 0) + 18,
-      Y((D.cohort_states.find((p) => p.id === D.student.id) || {}).last -
-        (D.cohort_states.find((p) => p.id === D.student.id) || {}).th) + 4,
-      "THIS STUDENT", css("--coral-b"));
+    const mine = pts.find((p) => p.student_id === D.student.id);
+    if (mine) {
+      lab(X(mine.mean_state) + 18, Y(mine.last_state - mine.theta) + 4,
+          "THIS STUDENT", css("--coral-b"));
+    }
     host.appendChild(g);
   }
 
   /** Two real students whose baselines genuinely differ. */
   function contrastPair(host) {
-    const pair = D.contrast || [];
-    if (pair.length < 2) { host.appendChild(emptyState("No contrast pair in this data file", "")); return; }
-    pair.forEach((p) => {
+    const pair = D.contrast;
+    if (!pair || !pair.high || !pair.low) {
+      host.appendChild(emptyState(
+        "No contrast pair available",
+        "Two students with genuinely different fitted set points could not be " +
+        "found in this run. The comparison is omitted rather than assembled from " +
+        "students who do not actually differ."));
+      return;
+    }
+    [pair.high, pair.low].forEach((p) => {
       const box = el("div", { class: "strip-vis" });
-      const d0 = p.eng[p.eng.length - 1] - p.theta;
-      box.appendChild(el("p", { class: "sv-title", text: "Student " + p.id }));
+      const d0 = p.mean[p.mean.length - 1] - p.theta;
+      box.appendChild(el("p", { class: "sv-title", text: "Student " + p.student_id }));
       box.appendChild(el("p", { class: "sv-sub", text: "Own baseline θ = " + fmt(p.theta) +
-        " · now " + fmt(p.eng[p.eng.length - 1]) + " (" + sign(d0) + " vs their own normal)" }));
-      box.appendChild(C.stateRibbon({ mean: p.eng, sd: p.eng_sd, theta: p.theta, h: 300,
-        label: "Student " + p.id + " against their own baseline of " + fmt(p.theta) }));
+        " · now " + fmt(p.mean[p.mean.length - 1]) + " (" + sign(d0) +
+        " vs their own normal)" }));
+      box.appendChild(C.stateRibbon({ mean: p.mean, sd: p.sd, theta: p.theta, h: 300,
+        label: "Student " + p.student_id + " against their own baseline of " +
+          fmt(p.theta) }));
       host.appendChild(box);
     });
   }
@@ -1420,6 +1653,7 @@
   function mountLanding() {
     [["#hero-vis", heroField],
      ["#vis-think", thinkSection],
+     ["#vis-memory", memorySection],
      ["#vis-cohort", cohortStrip],
      ["#vis-contrast", contrastPair],
      ["#vis-sim", landingSim],
@@ -1434,7 +1668,9 @@
     document.querySelectorAll("[data-fig]").forEach((n) => {
       const k = n.getAttribute("data-fig");
       if (k === "weeks") n.textContent = String(NW);
-      if (k === "students") n.textContent = String(D.cohort.students);
+      if (k === "students" && D.cohort && D.cohort.students != null) {
+        n.textContent = String(D.cohort.students);
+      }
       if (k === "theta") n.textContent = fmt(theta);
     });
   }
@@ -1443,7 +1679,8 @@
     const a = e.target.closest("[data-go]");
     if (a) { e.preventDefault(); go(a.getAttribute("data-go")); }
   });
-  window.addEventListener("hashchange", render);
+  /* `hashchange` is registered in boot(), after the view model is bound.
+     Registering it here would let a hash change render an unbound app. */
 
   /* ============================================================
      PRODUCT LAYER — profile store, onboarding, first-run twin.
@@ -1570,10 +1807,100 @@
     return wrap;
   }
 
-  /* ---------------------------------------------- boot ---- */
-  const violations = contractViolations();
-  if (violations.length) {
-    console.error("[StudyTwin] data contract violated. Missing:", violations);
+  /* ============================================================
+     BOOT
+
+     Asynchronous, because the data now comes over HTTP. Three
+     outcomes, all of them visible to the user:
+
+       api       live backend
+       snapshot  backend unreachable, bundled export used and SAID SO
+       none      neither available - an error, never a blank page and
+                 never a plausible-looking placeholder number
+     ============================================================ */
+
+  function skeleton() {
+    const wrap = el("div", { class: "boot" });
+    wrap.appendChild(el("div", { class: "boot-in" }, [
+      el("div", { class: "boot-mark" }, [icon("twin", 26)]),
+      el("p", { class: "boot-t", text: "Loading the Twin" }),
+      el("p", { class: "boot-s", text: "Fetching one student's state, baseline, "
+        + "attribution and simulated futures." }),
+      el("div", { class: "boot-bar" }, [el("i", {})]),
+      el("p", { class: "boot-src", text: (window.ST_Api ? window.ST_Api.base : "") ||
+        location.origin }),
+    ]));
+    return wrap;
   }
-  render();
+
+  function bootFailure(err, hint) {
+    const wrap = el("div", { class: "boot" });
+    wrap.appendChild(el("div", { class: "boot-in" }, [
+      emptyState(
+        "StudyTwin could not load any data",
+        "<code>" + (err || "unknown error") + "</code><br><br>" +
+        (hint || "") + "<br><br>" +
+        "No numbers are being shown because none are available. The application " +
+        "will not display placeholder values in place of a result.",
+        "err"),
+    ]));
+    return wrap;
+  }
+
+  /** Where the data came from. A snapshot that pretends to be live is the
+      one failure mode this whole layer exists to prevent. */
+  function sourceChip() {
+    if (BOOT.mode === "api") {
+      return el("span", { class: "chip chip-observed", title:
+        "Live from the API. Run " + (D.provenance.run_id || "").slice(0, 8) }, [
+        el("i", { class: "chip-dot" }), el("span", { text: "Live API" })]);
+    }
+    return el("span", { class: "chip chip-synthetic", title:
+      (D.fallback_reason || "") + " " + (D.fallback_hint || "") },
+      [el("i", { class: "chip-dot" }), el("span", { text: "Offline snapshot" })]);
+  }
+
+  async function boot() {
+    const site = $("#site"), app = $("#app");
+    site.hidden = true;
+    app.hidden = false;
+    app.className = "";
+    app.innerHTML = "";
+    app.appendChild(skeleton());
+
+    const res = await window.ST_Api.boot({});
+    if (!res.ok) {
+      BOOT = { mode: "none", error: res.error, hint: res.hint };
+      app.innerHTML = "";
+      app.appendChild(bootFailure(res.error, res.hint));
+      return;
+    }
+
+    bind(res.vm);
+    BOOT = { mode: res.mode, error: null, hint: null };
+
+    const violations = contractViolations();
+    if (violations.length) {
+      console.error("[StudyTwin] data contract violated. Missing:", violations);
+    }
+    if (res.mode === "snapshot") {
+      console.warn("[StudyTwin] using the bundled offline snapshot: " +
+        (res.vm.fallback_reason || "") + " " + (res.vm.fallback_hint || ""));
+    }
+
+    window.addEventListener("hashchange", render);
+    render();
+  }
+
+  let booted = false;
+  function bootOnce() {
+    if (booted) return;
+    booted = true;
+    boot();
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bootOnce);
+  } else {
+    bootOnce();
+  }
 })();

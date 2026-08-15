@@ -330,22 +330,7 @@ section.sec { padding: var(--s9) 0; border-bottom: 1px solid var(--line); }
   gap: var(--s6); flex-wrap: wrap; margin-bottom: var(--s6);
 }
 
-/* the four-move diagram */
-.stages { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: var(--s5); }
-.stage-btn {
-  display: grid; gap: .15rem; text-align: left; padding: .7rem 1rem;
-  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface);
-  transition: border-color .18s var(--ease), background .18s var(--ease);
-}
-.stage-btn:hover { border-color: var(--line-3); }
-.stage-btn[aria-pressed="true"] { border-color: var(--teal); background: var(--teal-d); }
-.stage-n { font-family: var(--mono); font-size: .6rem; letter-spacing: .14em; color: var(--ink-3); }
-.stage-btn[aria-pressed="true"] .stage-n { color: var(--teal-b); }
-.stage-t { font-size: .92rem; color: var(--ink-2); }
-.stage-btn[aria-pressed="true"] .stage-t { color: var(--ink); font-weight: 560; }
-.stage-body { border: 1px solid var(--line); border-radius: var(--r-lg);
-  background: var(--surface); padding: var(--s5); }
-.stage-say { font-size: .95rem; color: var(--ink-2); max-width: 68ch; margin: var(--s4) 0 0; }
+/* the four-move diagram now lives in loop.css */
 
 /* conventional vs twin */
 .contrast-pipe {

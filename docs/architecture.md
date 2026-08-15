@@ -131,5 +131,28 @@ Deliberately absent, with reasons:
 - **pymc / numpyro / Stan** — needed for the MCMC reference track, which is
   Phase 1. Adding the dependency before the code would be cargo.
 - **Airflow / Prefect** — scheduling nobody needs on a fixed dataset.
-- **FastAPI** — the `api/` package is an empty placeholder. Nothing consumes an
-  HTTP API yet, and the dashboard imports the pipeline directly.
+- ~~**FastAPI**~~ — **REVERSED, 2026-08-15.** The original reason was
+  conditional and specific: "the `api/` package is an empty placeholder. Nothing
+  consumes an HTTP API yet, and the dashboard imports the pipeline directly."
+  That condition no longer holds. `web/` now consumes an HTTP API, and the
+  alternative to a framework was hand-rolling routing, validation and error
+  handling on `http.server` - writing a worse web framework rather than using
+  one. FastAPI also generates `/api/docs` from the same models it validates
+  against, which for a project that has to be explained to a panel is worth more
+  than a hand-written endpoint list. Added with `uvicorn`.
+
+- ~~**pydantic**~~ (at the HTTP boundary only) — **PARTIALLY REVERSED,
+  2026-08-15.** The rejection above remains correct for its actual subject: the
+  transport type *inside the pipeline* is a validated frame, not per-row
+  objects, and instantiating an object per row for OULAD's 10.6M-row clickstream
+  would be absurd. Validating a few dozen fields at an HTTP boundary is a
+  different job, and it is the one job pydantic is unambiguously right for.
+  `src/student_twin/api/schemas.py` is the machine-checked half of
+  `docs/DATA_CONTRACT.md`; nothing inside `state/`, `models/`, `simulation/` or
+  `evaluation/` imports it.
+
+- **SQLAlchemy / Alembic** — persistence is stdlib `sqlite3` with numbered SQL
+  migrations. The schema is the documentation, every query is a select over a
+  composite key, and an ORM would hide exactly the SQL a reviewer wants to
+  check. See `docs/DATABASE_SCHEMA.md` for the full argument and the Postgres
+  migration path.

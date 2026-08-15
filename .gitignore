@@ -5,6 +5,14 @@ data/processed/*
 !data/processed/.gitkeep
 !data/README.md
 
+# The SQLite database is a CACHE of a pipeline run, not a source artefact.
+# Regenerate it in two commands rather than committing 30 MB of derived rows:
+#   python -m student_twin.store.migrate
+#   python scripts/ingest_run.py --students 250 --weeks 20
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
 # Experiment outputs
 outputs/
 runs/

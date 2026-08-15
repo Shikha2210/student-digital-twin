@@ -1,156 +1,331 @@
-# Context-Adaptive Student Digital Twin — Prototype 1
+# StudyTwin
 
-A per-student latent-state model with recursive updating, generative forward
-simulation, and an explicit intervention interface. Prediction is a *readout from
-the state*, not the definition of the system.
+**A context-adaptive student digital twin.** A latent state-space model that
+maintains a persistent, uncertainty-carrying estimate of one student's
+condition, updates it weekly, explains its own movements, and can be run forward
+to generate distributions over possible futures.
 
-**Status: first vertical slice.** The pipeline runs end to end. It runs on a
-synthetic fixture only — OULAD is not present in this environment, and the
-adapter refuses to substitute anything for it.
-
----
-
-## Quick start
+> **All data in this repository is SYNTHETIC.** The model has never been run on
+> real student data. Nothing here is a finding about students. Scenario outputs
+> are model-generated and are **not causal estimates**.
 
 ```bash
-py -3.13 -m pip install -e ".[dev,dashboard]"
-
-py -3.13 scripts/run_prototype.py                  # synthetic fixture
-py -3.13 scripts/run_prototype.py --adapter oulad  # real data, once present
-py -3.13 -m pytest -q                              # 69 tests
-streamlit run dashboard/app.py                     # dashboard
+python -m student_twin.store.migrate                       # create the database
+python scripts/ingest_run.py --students 250 --weeks 20     # run the model, store it
+uvicorn student_twin.api.app:app --port 8000               # serve everything
+# → http://127.0.0.1:8000            the product
+# → http://127.0.0.1:8000/api/docs   the API, explorable
 ```
 
-To use real data, put the OULAD CSVs in `data/raw/oulad/` — see
-[data/README.md](data/README.md).
+---
+
+## 1. What it is
+
+Conventional student analytics scores a student against a cohort, recomputes
+that score every week from scratch, and cannot be run forward. StudyTwin asks a
+different question: **how is this student doing relative to their own normal**,
+and where might they go next?
+
+The system is defined by four properties, each with a test it can fail:
+
+| # | Property | Meaning | Test | Status |
+|---|---|---|---|---|
+| 1 | Persistence | the state carries the whole history; nothing is replayed | T1 | **PASS** — `0.00e+00` |
+| 2 | Synchronization | it updates as observations arrive | structural | implemented |
+| 3 | Generativity | it can be run forward with honest spread | T2 | **PASS** — 88.9% coverage, dispersion 1.63 |
+| 4 | Intervenability | a hypothetical action is a model input, not a doctored observation | T3 | **NOT IMPLEMENTED** |
+| — | Identifiability | the latent dimensions mean something stable | T4 | **NOT IMPLEMENTED** |
+
+Because T4 has never run, the dimension names *engagement* and *capability* are
+**labels of convenience, not validated constructs.**
+
+## 2. Why it exists
+
+A capstone research project asking whether a digital twin — a term used loosely
+in education technology — can be given a definition strict enough to fail. Four
+properties, four tests, and a rule that a failing test is a result rather than
+something to tune away.
+
+Two tests in `tests/test_recovery.py` deliberately **assert current
+limitations**. If somebody improves the model, those tests fail. That is
+intentional: a suite that only ever goes green cannot tell you when a known
+weakness has been fixed.
 
 ---
 
-## The four properties, and where each lives
+## 3. Architecture
 
-| Property | Meaning | Implementation | Evidence |
-|---|---|---|---|
-| **Persistence** | State exists between observations | `state/model.py::StateTrajectory` | `test_state_persists_across_weeks` |
-| **Synchronization** | State updated recursively as evidence arrives | `state/filter.py::TwinFilter` | T1 passes exactly (max diff 0.00e+00) |
-| **Generativity** | Simulates future observation trajectories | `simulation/forward.py` | T2 runs — **currently FAILS**, see below |
-| **Intervenability** | Transition takes an exogenous intervention vector | `simulation/intervention.py` | `test_intervention_shifts_the_simulated_trajectory` |
+```
+adapters ──► pipeline ──► PipelineResult          ← THE MODEL, exactly once
+                              │
+                              ▼   scripts/ingest_run.py
+                       store/ingest.py            ← the ONLY writer
+                              ▼
+                     SQLite (data/studytwin.db)
+                              ▼
+                     store/repository.py          ← the ONLY reader
+                              ▼
+                        api/  FastAPI             ← shapes, never estimates
+                              ▼
+                        web/  vanilla JS          ← renders, never computes
+```
+
+**The one-model rule.** The backend does not fit, filter, simulate or score. It
+stores what the pipeline produced and serves it. If a value is not in a
+`PipelineResult` it does not get a database column, an API field, or a chart.
+
+When the landing page needed the *uncertainty* of the prediction step, the
+answer was migration `002` adding two columns — not re-implementing
+`P_pred = F P Fᵀ + Q` in JavaScript.
 
 ---
 
-## What is honestly working
+## 4. Frontend
 
-- Canonical schema with validation that **rejects** malformed adapter output
-  rather than coercing it.
-- OULAD adapter written against the published table layout, with a coverage
-  manifest — **structurally tested, never executed against real data.**
-- Tier-1 features with inspectable provenance and a passing temporal-leak guard.
-- Recursive Laplace filter: uncertainty shrinks with evidence, covariance stays
-  positive definite, empty weeks do not fabricate updates, missing scores are
-  skipped rather than imputed.
-- Baseline ladder + twin, forward-chained, with calibration reported beside
-  discrimination.
-- Negative controls with three-valued verdicts and control-specific interpretation.
-- Per-channel explanation of every weekly state change.
-- Forward simulation with uncertainty bands and scenario comparison.
+`web/` — zero dependencies, no build step, no framework. Charts are hand-built
+SVG because every charting library treats uncertainty as an optional overlay you
+can switch off, and here uncertainty **is** geometry: ribbon thickness *is* the
+95% credible interval.
 
-## Phase 2 result: T2 now passes, and why
-
-**T2 (generativity) PASSES: dispersion 1.62, coverage 90.4%.** It previously
-failed at 3.90. The thresholds were **not** touched — the cause was a data bug.
-
-The observation grid ran to the full horizon for every student, so **30.5% of all
-rows were fabricated post-withdrawal weeks**, every one exactly zero, against
-exactly **one** genuine zero-activity week among at-risk rows. The estimator was
-learning "zero activity means very low state" from students who had already left.
-Truncating the grid at withdrawal cut emission-loading inflation from **2.16–2.41x
-down to 1.03–1.13x** and fixed T2 as a side effect. See
-[A-13](docs/assumptions.md).
-
-## What is still failing
-
-**The twin is a level detector, not a trajectory detector** — now measured three
-independent ways rather than inferred:
-
-| Evidence | Result |
+| Screen | Question it answers |
 |---|---|
-| Signal decomposition | trajectory share **5.6%**; level alone 0.728 of full 0.741 |
-| `permute_time` control | AUC 0.705 -> 0.691, barely dented |
-| Ground-truth recovery | level r = **0.938**, trajectory r = **0.588** (capability: 0.657 / **0.153**) |
+| Landing | What is a digital twin, and why measure against a personal baseline? |
+| Twin Home | Where is this student relative to their own normal? |
+| Timeline | What happened in a given week, and why did the state move? |
+| Deep Dive | What *is* this student's normal? |
+| Future Lab | Where might they go? |
+| Intervention Lab | What if one model input changed? |
+| Model & data | How good is this, and where does it fail? |
+| Create your Twin | 10-step onboarding, honest about having zero observations |
 
-Part of this is the fixture: its ground truth is **77.5%/83.8% between-student**
-variance, so a level detector is the *correct* answer there. A
-`trajectory_dominant` regime was added to test the model rather than the fixture —
-and there the twin scores **0.515 against `rolling_features` at 0.601**. A plain
-logistic model on tier-1 features beats the latent state when trajectory is the
-signal. That is Gate 1 weakness 1, confirmed.
+**Visual grammar, applied everywhere:**
 
-**Uncertainty is over-confident.** Nominal 95% state intervals cover **~82%** of
-true states, exactly as A-05 predicted, now pinned by a test.
+| Encoding | Meaning |
+|---|---|
+| solid + ink | observed |
+| dashed + hatched | model-generated |
+| dashed amber | the student's own baseline θ |
+| teal / coral | above / below θ — **direction, not verdict** |
+| thickness | the 95% credible interval |
 
-**EM is implemented but off by default.** It improves engagement and collapses
-capability (`Q` to 0.25x truth), and makes T2 fail again. Reported, not enabled —
-see [A-14](docs/assumptions.md).
+There is deliberately no green/red "good/bad" language. A student below their
+own normal is a fact, not a failure.
 
-**Twin vs baselines is near-parity**: 0.705 twin, 0.695 prior-assessment, 0.694
-rolling-features. Which is exactly what Gate 1 H1 predicted.
-
----
-
-## What is NOT implemented
-
-- **MCMC reference track.** Interface only. All state estimates are
-  Laplace-approximate and labelled as such.
-- **EM parameter refinement.** `fit_twin(n_em_iters=k)` raises for non-zero `k`
-  rather than silently ignoring it.
-- **T3 (intervention stability), T4 (identifiability).** Raise
-  `NotImplementedError`. Until T4 passes, "engagement" and "capability" are
-  labels of convenience — see [A-06](docs/assumptions.md#a-06).
-- **Parameter and transfer uncertainty.** Architectural hooks only; reported
-  uncertainty is therefore an under-estimate.
-- **Cross-dataset transfer (L5), divergence curve.** P1, not prototype scope.
-- **`api/`** is an empty placeholder. Nothing needs HTTP yet.
-- **Lifestyle and self-report channels.** In the schema, supplied by nobody.
+**Offline fallback.** If the API is unreachable the frontend falls back to
+`web/data.js`, a frozen export of a real run, and shows a non-dismissible banner
+saying so. It never renders a placeholder number.
 
 ---
 
-## The line this project does not cross
+## 5. Backend
 
-Intervention effects are **assumed, never estimated.** OULAD records no
-interventions, so there is nothing to estimate them from. Read every scenario as
+FastAPI over SQLite, no ORM. 16 routes under `/api`, all documented at
+`/api/docs` (generated from the same pydantic models the responses are validated
+against, so it cannot drift).
 
-> Under the model's assumed transition dynamics, ...
-
-and never as
-
-> Doing this will improve the student's outcome.
-
-The separation is structural: interventions enter only through `d_t`, a channel
-no observation can write to. Full list of forbidden claims in
-[docs/assumptions.md](docs/assumptions.md).
+Full reference: [`docs/API_SPEC.md`](docs/API_SPEC.md).
+Never done backend work? Start with
+[`docs/BACKEND_EXPLAINED.md`](docs/BACKEND_EXPLAINED.md), which assumes nothing.
 
 ---
 
-## Layout
+## 6. Database
 
+SQLite, single file, 19 tables. Two invariants:
+
+1. **Every model-derived row carries `run_id`.** A number without a run has no
+   seed, no model version and no code revision, so it is unreproducible and
+   therefore not a result. `ON DELETE CASCADE` throughout.
+2. **Long format over wide**, so an adapter that lacks a channel has *no rows*
+   for it rather than zeros — preserving the distinction `CoverageManifest`
+   exists to enforce.
+
+Full reference: [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md).
+
+---
+
+## 7. The model
+
+$$z_{t+1} = z_t + \alpha \odot (\theta_i - z_t) + B u_t + C d_t + \varepsilon_t$$
+
+Two latent dimensions (three maximum, validated in code). Negative-binomial
+counts, Bernoulli submission, Gaussian-on-logit score. Laplace-approximate
+Gaussian filter — Newton to the posterior mode, `−H⁻¹` as covariance. Personal
+set point by empirical Bayes with an **estimated** shrinkage constant.
+Discrete-time hazard readout on a person-period risk set with censoring.
+
+Complete treatment, with every formula tied to the file that implements it:
+[`docs/STUDYTWIN_ML_TECHNICAL_REPORT.md`](docs/STUDYTWIN_ML_TECHNICAL_REPORT.md).
+
+---
+
+## 8. Running locally
+
+**Prerequisites:** Python 3.13 (`py -3.13`). The bare `python` on PATH may be
+3.11 and lacks scikit-learn.
+
+```bash
+py -3.13 -m venv .venv
+.venv\Scripts\python -m pip install -e ".[dev,dashboard]"
+.venv\Scripts\python -m pip install fastapi uvicorn httpx
 ```
-src/student_twin/
-  schema.py         canonical event contract, coverage manifest
-  config.py         dataclass config from TOML, seed derivation
-  pipeline.py       end-to-end orchestration
-  explain.py        per-channel attribution of state change
-  adapters/         oulad.py, synthetic.py  (only place dataset vocabulary appears)
-  features/         tier1.py, context.py, provenance.py
-  state/            model.py, emissions.py, filter.py, fit.py
-  models/           readout.py, baselines.py
-  simulation/       forward.py, intervention.py
-  evaluation/       metrics.py, splits.py, negative_controls.py, twin_tests.py
-tests/              69 tests, no OULAD dependency
-dashboard/app.py    streamlit prototype
-docs/               architecture.md, assumptions.md
+
+```bash
+# 1. database
+.venv\Scripts\python -m student_twin.store.migrate
+
+# 2. run the model and persist it   (~30 s)
+.venv\Scripts\python scripts\ingest_run.py --students 250 --weeks 20
+
+# 3. serve the API and the frontend together
+.venv\Scripts\python -m uvicorn student_twin.api.app:app --port 8000
 ```
 
-## Reproducibility
+Open <http://127.0.0.1:8000>.
 
-One master seed in `configs/prototype.toml`, with independent generators derived
-per purpose so adding a diagnostic cannot shift an experiment's stream. Runs
-write a manifest via `--out`. See [docs/architecture.md](docs/architecture.md).
+**Frontend only, no backend:** serve `web/` on any static server. The offline
+snapshot is used and the UI labels it as such.
+
+---
+
+## 9. Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `STUDYTWIN_DB` | `data/studytwin.db` | SQLite path |
+| `STUDYTWIN_WEB_DIR` | `web/` | static frontend directory |
+| `STUDYTWIN_SERVE_WEB` | `1` | serve the frontend from the API process |
+| `STUDYTWIN_CORS_ORIGINS` | localhost 8777 + 8000 | comma-separated; never `*` |
+| `STUDYTWIN_ALLOW_PROFILES` | `1` | enable `POST /api/profiles` |
+| `STUDYTWIN_MAX_PAGE_SIZE` | `500` | hard cap on `limit` |
+| `STUDYTWIN_LOG_LEVEL` | `INFO` | logging level |
+
+No secret, credential or connection string is hard-coded anywhere.
+
+---
+
+## 10. Tests
+
+```bash
+.venv\Scripts\python -m pytest              # everything
+.venv\Scripts\python -m pytest tests/test_store.py tests/test_api.py -v
+.venv\Scripts\python -m pytest tests/test_recovery.py -v
+```
+
+| File | Covers |
+|---|---|
+| `test_schema.py` | canonical schema, coverage manifest |
+| `test_adapters.py` | adapter contracts; OULAD raises rather than falling back |
+| `test_features.py` | tier-1 features, at-risk truncation |
+| `test_state.py` | filter, predict/update, smoother |
+| `test_recovery.py` | ground-truth recovery **and asserted limitations** |
+| `test_prediction_and_simulation.py` | forward simulation, T1, T2 |
+| `test_readout_regimes.py` | hazard under different signal regimes |
+| `test_store.py` | migrations, constraints, ingest atomicity, cascades |
+| `test_api.py` | routes, contract shape, errors, honesty guarantees |
+
+---
+
+## 11. Loading data
+
+**Synthetic** (default) — generated from a known process, which is the only
+reason validation is possible at all.
+
+**OULAD** — download to `data/raw/oulad/` per `data/README.md`, then:
+
+```bash
+.venv\Scripts\python scripts\ingest_run.py --adapter oulad
+```
+
+If the files are absent the adapter **raises**. It never silently falls back to
+synthetic data.
+
+**⚠️ OULAD has never been run.** Four adapter defects remain unfixed: the `'?'`
+missing-value sentinel; 3,538 students colliding on `student_id` across
+presentations; negative `date_unregistration`; and the unmapped `ouelluminate`
+activity type.
+
+---
+
+## 12. Known limitations
+
+Ranked by how much each should change what you say about the system.
+
+1. **Never run on real data.** Every number describes an estimator's behaviour
+   on data generated from a known process.
+2. **`C` is assumed, not fitted.** No intervention exists in any dataset here.
+   Scenario differences are properties of a declared sensitivity matrix and are
+   **not causal evidence**.
+3. **T4 has not run** — the dimension names are conventions.
+4. **T3 has not run** — the intervention mechanism works; its stability is untested.
+5. **Intervals are over-confident.** Nominal 95% covers **72.7%** (engagement).
+   Parameter and transfer uncertainty are not modelled at all.
+6. **Level dominates trajectory.** Trajectory share 0.364 — "MIXED".
+7. **The two-stage fit inflates α and Q.** Fitted α = [0.79, 0.28] vs true
+   [0.35, 0.18]. EM is implemented and disabled by default.
+8. **The twin loses on calibration.** Its ECE (0.0151) is worse than three of
+   four baselines. That row is in the product UI.
+9. **No confidence intervals on any metric.** 26 events is a small sample.
+10. **No fairness or subgroup analysis.**
+11. **No authentication.** Acceptable only while all data is synthetic; a hard
+    blocker before any real cohort is ingested.
+
+---
+
+## 13. Synthetic vs real data
+
+| | Synthetic | OULAD |
+|---|---|---|
+| Status | every result here | **NEVER RUN** |
+| Ground truth for `z` | yes | impossible — no such column exists |
+| Students | 150–250 | 28,785 unique |
+| Withdrawal rate | ~4% | 31.2% |
+| What results mean | describe the **estimator** | would describe **students** |
+
+The provenance flag travels with the run: `model_runs.synthetic` → API
+`provenance.synthetic` → a mandatory chip in the UI. It cannot be dropped
+without a test failing.
+
+---
+
+## 14. Research status
+
+**Prototype 1.** Runs end to end on the synthetic fixture. T1 and T2 pass; T3
+and T4 are unimplemented. The most important open question is raising the
+trajectory share — the twin is still substantially a level detector, which is
+Gate 1 weakness 1.
+
+`docs/assumptions.md` is normative for anything the code does (A-01 … A-17,
+plus ten forbidden claims). Where this README and that document disagree, that
+document wins.
+
+---
+
+## 15. Documentation
+
+| Document | For |
+|---|---|
+| [`STUDYTWIN_ML_TECHNICAL_REPORT.md`](docs/STUDYTWIN_ML_TECHNICAL_REPORT.md) | the complete model: maths, validation, limits |
+| [`DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) | every table, key, index and constraint |
+| [`API_SPEC.md`](docs/API_SPEC.md) | every route, error and security control |
+| [`DATA_CONTRACT.md`](docs/DATA_CONTRACT.md) | exactly what the frontend receives |
+| [`BACKEND_EXPLAINED.md`](docs/BACKEND_EXPLAINED.md) | backend from zero, no assumed knowledge |
+| [`COPILOT_BACKEND_IMPLEMENTATION_PROMPT.md`](docs/COPILOT_BACKEND_IMPLEMENTATION_PROMPT.md) | a spec another agent can implement from |
+| [`architecture.md`](docs/architecture.md) | design decisions, including rejected dependencies |
+| [`assumptions.md`](docs/assumptions.md) | **normative.** A-01 … A-17 and the forbidden claims |
+
+---
+
+## 16. Forbidden claims
+
+Reproduced from `docs/assumptions.md` because they matter more than anything
+else in this file:
+
+* Never claim a causal intervention effect. `C` is assumed (A-08).
+* Never call the replay real-time. It is retrospective and weekly (A-12).
+* Never call digital traces physiological or multimodal sensing. Permanently out
+  of scope.
+* Never claim the latent state is the student's real knowledge or motivation.
+  T4 has not run (A-06).
+* Never report a synthetic number as a finding about students.
+* Never fabricate a result. If OULAD is absent, the adapter raises.
