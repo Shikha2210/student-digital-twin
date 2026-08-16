@@ -36,6 +36,11 @@ dist/
 venv/
 env/
 
+# Claude Code per-machine state. settings.local.json is a local permission
+# allowlist carrying absolute paths from whoever generated it. It is local
+# state, not project configuration.
+.claude/settings.local.json
+
 # Editors / OS
 .vscode/
 .idea/
