@@ -41,6 +41,10 @@ env/
 # state, not project configuration.
 .claude/settings.local.json
 
+# Coursework doc bundled with a skill, unrelated to the project and too large
+# (4.5 MB) to belong in this history. Kept on disk for local use only.
+.claude/skills/eval-report/report.capstone.docx
+
 # Editors / OS
 .vscode/
 .idea/
