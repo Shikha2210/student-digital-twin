@@ -36,7 +36,9 @@ chart.
    abstraction that hides exactly the SQL a reviewer wants to check.
 3. `sqlite3` is stdlib, so persistence adds zero packages.
 
-**Two invariants run through every table.**
+**Two invariants run through every MODEL table.** The daily-record tables
+added in `003` are raw student input rather than model output and follow a
+third rule instead - see §2.13 and [`DAILY_RECORDS.md`](DAILY_RECORDS.md).
 
 1. **Every model-derived row carries `run_id`.** A number without a run has no
    seed, no model version and no code revision behind it, which makes it
@@ -110,9 +112,26 @@ chart.
 └───────────┘└──────────────┘└───────────────┘
 
        ┌───────────────────┐
-       │     profiles      │  ← ISLAND. No FK to anything.
-       │  PK profile_id    │     The only table that can hold a real name.
-       └───────────────────┘
+       │     profiles      │  ← THE PERSON. No FK to any model table.
+       │  PK profile_id    │     The only table that can hold a real name,
+       │  term_start       │     and the only one a student can write to.
+       └─────────┬─────────┘
+                 │ 1..n          ← RAW student input. No run_id anywhere below.
+       ┌─────────▼─────────┐
+       │    day_records    │
+       │  PK day_id        │
+       │  UQ(profile,date) │
+       │  week_index,      │
+       │  day_of_week      │
+       └─────────┬─────────┘
+     ┌───────────┼────────────────┐
+┌────▼──────────┐┌▼──────────────┐┌▼───────────────┐
+│day_activities ││day_observations││day_reflections │
+│PK activity_id ││PK(day_id,      ││PK(day_id,      │
+│  seq, title,  ││   metric)      ││   prompt)      │
+│  category,    ││                ││                │
+│  minutes ...  ││   LONG format  ││   LONG format  │
+└───────────────┘└────────────────┘└────────────────┘
 ```
 
 ---
@@ -327,7 +346,145 @@ PK `profile_id`. `display_name`, `consent`, `payload_json`, `observations`,
 **No foreign key connects this table to any model table.** That is the point:
 "drop all model data" and "delete a user" must be different operations.
 `observations` is `0` and stays `0` — there is no ingestion path for personal
-observations, and the API returns `model_input: false` alongside it.
+*model* observations, and the API returns `model_input: false` alongside it.
+
+Migration `003` adds `term_start TEXT` (nullable): the Monday that anchors week
+numbering for this person's daily records, normalised to a Monday on write.
+`NULL` is honest — a profile that has declared no study period has no week 1 to
+be relative to, and the timeline reports `term_start_declared: false` rather than
+presenting an invented one as settled.
+
+**It is no longer an island in one direction only.** Nothing model-derived points
+at it, which is the property that mattered; the daily tables in §2.13 point *at*
+it and cascade from it, which is the same property from the other side — erasing
+a person still erases everything about them in one `DELETE`.
+
+
+### 2.13 `day_records` / `day_activities` / `day_observations` / `day_reflections`
+
+Added by migration `003_daily_records`. Full reasoning:
+[`DAILY_RECORDS.md`](DAILY_RECORDS.md).
+
+**The one thing to notice first: no table in this group carries `run_id`.**
+Every model-derived table in this schema does, because a number without a seed
+and a code revision is unreproducible. A day a student lived is the opposite
+kind of fact - it is RAW INPUT, derived from nothing, and it must survive a
+re-ingest. Hanging these off `model_runs` would make a person's history cascade
+away when somebody re-ran the pipeline.
+`tests/test_daily.py::test_daily_records_do_not_hang_off_a_model_run` asserts the
+column was never quietly added.
+
+The owner is a **profile**, not a `students` row. `students` is "a student as
+observed in one run" and is re-created under a new `run_id` every ingest;
+`profiles` is the only run-independent, person-scoped, writable table in the
+schema. That choice does three things at once: the days survive re-ingests, they
+cascade away with the same `DELETE` that erases the person, and every read is
+reachable only through a `profile_id` - which is what makes cross-account access
+structurally impossible rather than a rule somebody has to remember.
+
+`profiles` gains one column: `term_start TEXT` (nullable), the Monday that
+anchors week numbering.
+
+#### `day_records` — one student, one calendar date
+
+| Column | Type | Notes |
+|---|---|---|
+| `day_id` | TEXT | PK, uuid4 hex |
+| `profile_id` | TEXT | FK → `profiles`, CASCADE |
+| `date` | TEXT | ISO-8601 calendar date |
+| `week_index` | INTEGER | 1-based, **derived from `date`**, never accepted from a client |
+| `day_of_week` | INTEGER | ISO: 1 = Monday … 7 = Sunday |
+| `source` | TEXT | `student` \| `system` \| `import` \| `other` |
+| `created_at`, `updated_at` | TEXT | ISO-8601 UTC |
+
+**`UNIQUE (profile_id, date)`.** Without it a save that retries on a flaky
+connection silently splits one day in two and the week view shows Thursday
+twice. The route translates the integrity error into `409`, rather than
+pre-checking with a `SELECT` - check-then-insert is a race.
+
+**`CHECK (date IS strftime('%Y-%m-%d', date))`.** `IS` rather than `=` because
+`strftime` returns `NULL` for garbage, and a `NULL` comparison would *satisfy* a
+`CHECK`. `2026-02-30` is rejected in the database, not only in pydantic.
+
+**Why `week_index` is stored at all.** It is a cached derivation, kept so "give
+me week 8" is one indexed range scan. Because it is a cache it is re-derived
+whenever the anchor moves — `Repository.set_term_start` rewrites every row in one
+transaction, through `daily.calendar.week_index` rather than SQL date
+arithmetic, so there is never a second implementation of week numbering and
+never a row whose stored week disagrees with its date.
+
+A row exists because the student **opened** the day, even if they recorded
+nothing in it. An opened-and-empty day and an absent day are different facts.
+
+**Index:** `ix_day_profile_week (profile_id, week_index, day_of_week)` for the
+week view. `(profile_id, date)` is already indexed by the `UNIQUE` constraint,
+which covers single-day and date-range reads.
+
+#### `day_activities` — many per day
+
+PK `activity_id`, FK → `day_records` CASCADE. `seq` keeps a stable order for the
+activities with no clock time, which is most of them when a day is logged from
+memory.
+
+| Column | Notes |
+|---|---|
+| `title` | `CHECK length(trim(title)) > 0` |
+| `category` | closed vocabulary, `CHECK IN (...)` — same list as `daily.vocab.ACTIVITY_CATEGORIES` |
+| `detail`, `subject` | free text; `NULL` = not written |
+| `start_time`, `end_time` | `'HH:MM'`, `GLOB '[0-2][0-9]:[0-5][0-9]'`. `NULL` = no clock time recorded |
+| `minutes` | `NULL` = **unknown**, never 0-for-unknown |
+| `importance` | 1–5 or `NULL` |
+| `status` | `done` \| `partial` \| `pending` \| `missed`, or `NULL` |
+
+**Why `category` is a closed vocabulary.** Free text becomes forty spellings of
+"studying" within a week, and no aggregate over it means anything afterwards.
+The cost is that adding a category is a migration; that cost is correct, because
+adding one changes what a weekly summary counts.
+
+**Why `minutes` is nullable rather than defaulted.** A duration of `0` would be
+summed into a weekly total as though it were a measurement. `NULL` is excluded
+from the total and counted separately as `activities_without_duration`, so a
+partial sum cannot be read as a complete one.
+
+**Index:** `ix_dayact_day (day_id, seq)`.
+
+#### `day_observations` — structured scales, long format
+
+PK `(day_id, metric)`, `value REAL NOT NULL`.
+
+Nine metrics: `mood`, `energy`, `focus`, `motivation`, `stress`, `workload`,
+`productivity`, `sleep_quality` (all 1–5) and `sleep_hours` (0–24). The range is
+enforced per metric by one `CHECK` with a `CASE`-style disjunction, which also
+closes the metric vocabulary.
+
+**Long format, for the same reason `observations` is.** A student who rated
+their mood and skipped everything else has **one row**. There is no
+representation of "focus = 0 because the form wanted a number", because there is
+no focus row. The wide alternative — nine nullable columns — puts a
+plausible-looking number one careless `COALESCE` away.
+
+The range `CHECK` deliberately duplicates `daily.vocab.check_metric`, in the same
+spirit as `model_runs.n_dims`: a stray script writing to the file directly must
+not be able to route around a stated constraint.
+
+#### `day_reflections` — free text, long format
+
+PK `(day_id, prompt)`, `CHECK prompt IN ('difficult','learned','went_well',
+'went_badly','events','notes')`, `CHECK length(trim(body)) > 0`.
+
+An unanswered prompt has **no row**, so "what did you find difficult?" renders as
+unanswered rather than as an empty quotation. The non-empty `CHECK` is what keeps
+"unanswered" and "answered with nothing" distinguishable.
+
+#### What is deliberately absent
+
+* **No `week_data` JSON blob**, and no JSON column anywhere in this group. A
+  student's history in one document cannot be queried, cannot be indexed, and
+  cannot be constrained.
+* **No stored weekly aggregate.** Rollups are computed on read by
+  `daily/aggregate.py`. A stored aggregate can silently disagree with the rows
+  beneath it; a recomputed one cannot.
+* **No `run_id`, and no FK to any model table.** See above.
 
 ---
 
@@ -342,6 +499,9 @@ observations, and the API returns `model_input: false` alongside it.
 | `ix_feat_student_week` | `features (run_id, student_id, t)` | timeline rail |
 | `ix_state_student_week` | `twin_states (run_id, student_id, t)` | every chart |
 | `ix_profiles_created` | `profiles (created_at DESC)` | listing |
+| `ix_day_profile_week` | `day_records (profile_id, week_index, day_of_week)` | the week view, the daily layer's hot path |
+| `ix_dayact_day` | `day_activities (day_id, seq)` | a day's activities, in display order |
+| *(implicit)* | `day_records (profile_id, date)` via `UNIQUE` | one day, and date-range reads |
 
 Composite primary keys already index the leading columns, so these cover the
 access patterns the primary keys do not.
@@ -398,6 +558,7 @@ INSERT INTO attribution_components VALUES
 | everything with `run_id` | `store/ingest.py` only | `store/repository.py` only | cascade from `model_runs` |
 | `scenarios` + forecasts | `store/ingest.py` | `repository.py` | cascade |
 | `profiles` | `api/routes.py` | `api/routes.py` | `DELETE /api/profiles/{id}` |
+| `day_*` | `repository.py`, via `api/routes_daily.py` | `repository.py` | per-day, or cascade from the profile |
 | `schema_migrations` | `store/migrate.py` | `migrate.py`, `/api/health` | never |
 
 Ingest is wrapped in a single transaction. A half-written run looks like a

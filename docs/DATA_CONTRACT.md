@@ -248,3 +248,41 @@ read as a pass; a sentence saying NOT IMPLEMENTED cannot.
 | Causal effect of an intervention | `C` is assumed, not fitted (A-08) |
 | Physiological / multimodal channels | Permanently out of scope; declared unavailable |
 | Real-time anything | The replay is retrospective and weekly (A-12) |
+| Any model quantity derived from a daily record | Daily data feeds no model; see §7 and `DAILY_RECORDS.md` §5 |
+| A stored weekly aggregate of daily rows | Computed on read, so it cannot disagree with the rows beneath it |
+
+---
+
+## 7. Daily records - a third kind of number
+
+Everything in §§3-4 is model output or arithmetic over model output. The daily
+payloads carry a third thing, and the contract keeps the three apart because a
+consumer that confuses them will draw a self-reported mood on the same axis as a
+latent state.
+
+| Kind | Example payload | Field that says so |
+|---|---|---|
+| **Raw** | `DayDetail.observations`, `.activities`, `.reflections` | `model_input: false` |
+| **Derived** | `WeekRollup` | `WeekDetail.derived: true`, and every mean carries `n` |
+| **Model** | `StateSeries`, `ScenarioForecast` | `method`, `disclaimer`, `provenance` |
+
+Three rules the frontend must follow, and one it must not.
+
+**A missing key means NOT RECORDED.** `observations` holds only the metrics the
+student entered. There is no default and no sentinel - `0` is a legitimate value
+for `sleep_hours` and could not double as "unknown" even if we wanted it to. Omit
+the element; do not render a dash inside a tile shaped like a value.
+
+**A partial total must be shown as partial.** `minutes_logged` always arrives
+with `activities_without_duration`. If the second is non-zero, the first is a
+sum over some of the week and the UI has to say so.
+
+**`days_recorded` and `days_with_content` are different questions.** A student
+can open a day and record nothing. The first counts the row, the second counts
+the content.
+
+**A daily payload must never be plotted against a latent trajectory** as though
+the two were the same kind of quantity. They differ in provenance, in scale and
+in what a reader is entitled to conclude from them.
+
+Full reasoning: [`DAILY_RECORDS.md`](DAILY_RECORDS.md).

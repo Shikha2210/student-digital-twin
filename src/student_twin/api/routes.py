@@ -21,6 +21,7 @@ from .. import __version__ as MODEL_VERSION
 from ..store.repository import Repository
 from . import services
 from .deps import get_repo, get_settings_dep, resolve_run
+from .routes_daily import router as daily_router
 from .schemas import (
     CapabilityTestRow,
     CohortPoint,
@@ -42,6 +43,12 @@ from .schemas import (
 from .settings import Settings
 
 router = APIRouter(prefix="/api")
+
+# Daily records live in their own module because they are the API's other
+# half: everything above is read-only model output, everything there is a
+# student writing their own history. Same URL space, same conventions,
+# separate file so the boundary stays legible.
+router.include_router(daily_router)
 
 
 # ------------------------------------------------------------------- meta
@@ -200,10 +207,11 @@ def create_profile(body: ProfileCreate, repo: Repository = Depends(get_repo),
     pid = uuid.uuid4().hex
     now = datetime.now(UTC).isoformat(timespec="seconds")
     repo.create_profile(pid, now, body.display_name, body.consent,
-                        json.dumps(body.payload))
-    return ProfileOut(profile_id=pid, created_at=now, updated_at=now,
-                      display_name=body.display_name, consent=body.consent,
-                      observations=0, payload=body.payload, model_input=False)
+                        json.dumps(body.payload), body.term_start)
+    # Read back rather than echoing the request: `term_start` is normalised
+    # to a Monday on the way in, so echoing what was sent would report an
+    # anchor the database does not hold.
+    return ProfileOut(**repo.profile(pid), model_input=False)
 
 
 @router.get("/profiles/{profile_id}", response_model=ProfileOut, tags=["profiles"])
@@ -220,7 +228,7 @@ def update_profile(profile_id: str, body: ProfileCreate,
                    repo: Repository = Depends(get_repo)) -> ProfileOut:
     now = datetime.now(UTC).isoformat(timespec="seconds")
     if not repo.update_profile(profile_id, now, body.display_name, body.consent,
-                               json.dumps(body.payload)):
+                               json.dumps(body.payload), body.term_start):
         raise HTTPException(404, detail={"error": "profile_not_found",
                                          "detail": "no such profile"})
     return ProfileOut(**repo.profile(profile_id), model_input=False)

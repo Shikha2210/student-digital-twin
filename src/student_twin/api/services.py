@@ -13,23 +13,35 @@ values the model already produced, and the response says so.
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date
 from typing import Any
 
+from ..daily import calendar as cal
+from ..daily.aggregate import WeekRollup, rollup_week, rollup_weeks
 from ..store.repository import Repository
 from .schemas import (
+    ActivityOut,
     AttributionComponent,
     AttributionStep,
     BaselineEstimate,
+    CategoryTotalOut,
     CohortPoint,
+    DailyTimeline,
+    DayDetail,
+    DaySlot,
     ForecastQuantiles,
     HazardPoint,
+    MetricSummaryOut,
     OwnDistribution,
     Provenance,
     ScenarioForecast,
     StateSeries,
     StudentSummary,
+    TimelineWeek,
     TwinPayload,
+    WeekDetail,
     WeekObservations,
+    WeekRollupOut,
 )
 
 SIM_DISCLAIMER = (
@@ -251,3 +263,186 @@ NEVER_RUN = [
     "T4 (identifiability / construct validity) - NOT IMPLEMENTED. Until it runs, "
     "the dimension names are labels of convenience, not validated constructs.",
 ]
+
+
+# ================================================================
+# DAILY RECORDS
+# ----------------------------------------------------------------
+# Assembly of the raw daily rows into the payloads the day, week and
+# timeline screens read. Same rule as everything above: shaping only.
+# The single piece of arithmetic here is delegated to
+# `student_twin.daily.aggregate`, which is a pure function over plain
+# dicts and is tested without a database or an HTTP client.
+#
+# The distinction this section exists to hold:
+#
+#     raw       rows the student wrote        -> DayDetail
+#     derived   arithmetic over those rows    -> WeekRollupOut
+#     model     nothing here                  -> model_input: false
+#
+# `model_input: false` is on every daily payload for the same reason
+# it is on a profile: a client cannot render this data without also
+# receiving the fact that no model consumes it.
+# ================================================================
+
+#: What "today" is, for rejecting days that have not happened. The
+#: server's local date rather than UTC: a student in UTC+11 logging their
+#: evening would otherwise be told their own day is in the future.
+def _today() -> str:
+    return date.today().isoformat()
+
+
+WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday",
+                 "Friday", "Saturday", "Sunday")
+
+#: Said on the timeline and on every day. Kept as one constant so the
+#: sentence cannot drift between screens the way a re-typed caption does.
+DAILY_MODEL_NOTE = (
+    "RAW STUDENT-ENTERED DATA. Persisted, aggregated into weekly summaries and "
+    "displayed. It is consumed by no model: the state filter reads weekly "
+    "behavioural channels from a pipeline run, and no emission model has been "
+    "fitted for self-reported daily scales. See docs/DAILY_RECORDS.md."
+)
+
+
+def _activity_out(row: dict[str, Any]) -> ActivityOut:
+    return ActivityOut(
+        activity_id=row["activity_id"], day_id=row["day_id"], seq=row["seq"],
+        title=row["title"], category=row["category"], detail=row["detail"],
+        subject=row["subject"], start_time=row["start_time"],
+        end_time=row["end_time"], minutes=row["minutes"],
+        importance=row["importance"], status=row["status"], source=row["source"],
+        created_at=row["created_at"], updated_at=row["updated_at"],
+    )
+
+
+def day_detail(profile_id: str, row: dict[str, Any]) -> DayDetail:
+    return DayDetail(
+        day_id=row["day_id"], profile_id=profile_id, date=row["date"],
+        week=row["week_index"], day_of_week=row["day_of_week"],
+        source=row["source"], created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        activities=[_activity_out(a) for a in row.get("activities", [])],
+        observations=row.get("observations", {}),
+        reflections=row.get("reflections", {}),
+    )
+
+
+def _rollup_out(r: WeekRollup) -> WeekRollupOut:
+    return WeekRollupOut(
+        week=r.week, start_date=r.start_date, end_date=r.end_date,
+        days_recorded=r.days_recorded, days_with_content=r.days_with_content,
+        n_activities=r.n_activities, minutes_logged=r.minutes_logged,
+        activities_without_duration=r.activities_without_duration,
+        n_reflections=r.n_reflections,
+        by_category=[CategoryTotalOut(**c.as_dict()) for c in r.by_category],
+        metrics=[MetricSummaryOut(**m.as_dict()) for m in r.metrics],
+    )
+
+
+def resolve_anchor(repo: Repository, profile_id: str) -> tuple[str, bool]:
+    """`(term_start, declared)` for a profile that may have neither.
+
+    Falls back to today's Monday only when the profile has no declared
+    anchor AND no recorded days - the case where the student is about to
+    write their first day and there is nothing to anchor against yet.
+    The boolean travels with it so the UI can say the numbering is
+    provisional rather than presenting an invented week 1 as settled.
+    """
+    declared = repo.term_start(profile_id)
+    if declared:
+        return cal.monday_of(declared).isoformat(), True
+    effective = repo.effective_term_start(profile_id)
+    if effective:
+        return effective, False
+    return cal.monday_of(_today()).isoformat(), False
+
+
+def week_detail(repo: Repository, profile_id: str, week: int) -> WeekDetail:
+    """One study week: seven slots, the days behind them, and the summary.
+
+    Seven slots are always returned, whether or not rows exist. That is
+    the point of the screen: a week is Monday to Sunday regardless of how
+    much of it the student filled in, and a slot with no row renders as
+    "no data" with an add action rather than as absent from the list.
+    """
+    anchor, declared = resolve_anchor(repo, profile_id)
+    start, end = cal.week_bounds(week, anchor)
+    rows = repo.days_for_week(profile_id, week)
+    by_date = {r["date"]: r for r in rows}
+    today = _today()
+
+    slots: list[DaySlot] = []
+    for iso in cal.week_dates(week, anchor):
+        row = by_date.get(iso)
+        dow = cal.day_of_week(iso)
+        slots.append(DaySlot(
+            date=iso, day_of_week=dow, weekday=WEEKDAY_NAMES[dow - 1],
+            recorded=row is not None,
+            day_id=row["day_id"] if row else None,
+            n_activities=len(row["activities"]) if row else 0,
+            n_metrics=len(row["observations"]) if row else 0,
+            n_reflections=len(row["reflections"]) if row else 0,
+            is_future=iso > today,
+        ))
+
+    return WeekDetail(
+        profile_id=profile_id, week=week, start_date=start, end_date=end,
+        term_start=anchor, term_start_declared=declared,
+        slots=slots,
+        days=[day_detail(profile_id, r) for r in rows],
+        rollup=_rollup_out(rollup_week(rows, week, anchor)),
+    )
+
+
+def timeline(repo: Repository, profile_id: str) -> DailyTimeline:
+    """Every study week this profile has, with the shape of its history.
+
+    The span runs from week 1 to whichever is later: the last week that
+    holds data, or the week containing today. Today is included so a
+    student always has somewhere to put today's entry; nothing beyond it
+    is manufactured.
+
+    There is deliberately no constant in this function. A hard-coded
+    twenty would make the timeline a fixed-length strip that happens to
+    be mostly empty, which is a different claim from "this is how long
+    the history is".
+    """
+    declared_raw = repo.term_start(profile_id)
+    anchor, declared = resolve_anchor(repo, profile_id)
+    counts = {int(c["week"]): c for c in repo.week_counts(profile_id)}
+    today = _today()
+
+    last_recorded = max(counts) if counts else 0
+    current = cal.week_index(today, anchor)
+    span = max(last_recorded, current if current >= 1 else 1, 1)
+
+    weeks: list[TimelineWeek] = []
+    for w in range(1, span + 1):
+        start, end = cal.week_bounds(w, anchor)
+        c = counts.get(w)
+        weeks.append(TimelineWeek(
+            week=w, start_date=start, end_date=end,
+            days_recorded=int(c["days_recorded"]) if c else 0,
+            n_activities=int(c["n_activities"] or 0) if c else 0,
+            has_data=c is not None,
+        ))
+
+    # Rollups only for weeks that hold something. A rollup of an empty
+    # week is a row of zeros, and a strip of those reads as measurement.
+    all_days = repo.all_days(profile_id) if counts else []
+    rollups = [_rollup_out(r) for r in rollup_weeks(all_days, anchor)]
+
+    dates = [d["date"] for d in all_days]
+    return DailyTimeline(
+        profile_id=profile_id,
+        term_start=cal.monday_of(declared_raw).isoformat() if declared_raw else (
+            anchor if counts else None),
+        term_start_declared=declared,
+        n_weeks=len(weeks), weeks=weeks,
+        days_recorded=len(all_days),
+        first_date=min(dates) if dates else None,
+        last_date=max(dates) if dates else None,
+        today=today,
+        rollups=rollups,
+    )

@@ -1,0 +1,219 @@
+/* ============================================================
+   StudyTwin  ·  Daily journal
+
+   Extends app.css and dash.css; defines no colour, no radius and no
+   spacing of its own. Every value below is a token from the design
+   system, because a screen that invents its own greys is how a
+   product stops looking like one product.
+
+   The one visual idea specific to this screen: a day the student has
+   NOT recorded must look different from one they have, and different
+   again from one that has not happened. Three states, three
+   treatments - solid surface, dashed outline, dimmed - so the week
+   grid can be read without printing "no data" seven times.
+   ============================================================ */
+
+.jn .view-head { align-items: flex-start; flex-wrap: wrap; gap: var(--s4); }
+.jn-actions { display: flex; gap: var(--s3); flex-wrap: wrap; margin-left: auto; }
+
+/* ---- loading ------------------------------------------------- */
+.jn-load { padding: var(--s7) var(--s5); text-align: center; }
+.jn-load-bar {
+  height: 2px; border-radius: 1px; background: var(--surface-3);
+  overflow: hidden; max-width: 18rem; margin: 0 auto var(--s4);
+}
+.jn-load-bar i {
+  display: block; height: 100%; width: 34%; background: var(--teal);
+  animation: jnSlide 1.15s var(--ease) infinite;
+}
+@keyframes jnSlide { 0% { transform: translateX(-110%); } 100% { transform: translateX(330%); } }
+@media (prefers-reduced-motion: reduce) {
+  .jn-load-bar i { animation: none; width: 100%; opacity: .5; }
+}
+.jn-load-t {
+  margin: 0; font-family: var(--mono); font-size: .66rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-4);
+}
+
+/* ---- week rail ----------------------------------------------- */
+.jn-strip .tl-steps { gap: .4rem; }
+.jn-week {
+  display: grid; gap: .3rem; justify-items: center;
+  padding: .45rem .5rem .4rem; min-width: 3.4rem;
+}
+.jn-week-n { font-family: var(--mono); font-size: .68rem; letter-spacing: .04em; }
+/* Seven pips rather than a count: an empty week reads as empty at a
+   glance without a zero being printed anywhere. */
+.jn-pips { display: flex; gap: 2px; }
+.jn-pips i {
+  width: 3px; height: 3px; border-radius: 50%; background: var(--line-3);
+}
+.jn-pips i.on { background: var(--teal); }
+.jn-week[aria-pressed="true"] .jn-pips i { background: var(--line-3); }
+.jn-week[aria-pressed="true"] .jn-pips i.on { background: var(--teal-b); }
+
+.jn-wknav { display: flex; gap: .25rem; align-items: center; }
+.jn-wknav .btn { padding: .4rem .55rem; }
+
+/* ---- the seven days ------------------------------------------ */
+.jn-days {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: .5rem; margin-top: var(--s4);
+}
+.jn-day {
+  display: grid; gap: .18rem; justify-items: start; text-align: left;
+  padding: var(--s3) .7rem var(--s4);
+  border: 1px dashed var(--line-2); border-radius: var(--r-md);
+  background: transparent; min-height: 6.2rem;
+  transition: background .16s var(--ease), border-color .16s var(--ease),
+              transform .16s var(--ease);
+}
+.jn-day:hover { border-color: var(--line-3); background: var(--surface-2); }
+.jn-day:focus-visible { outline: 2px dashed var(--ink-3); outline-offset: 2px; }
+/* Recorded: a real surface with a solid edge. Solid means observed here
+   exactly as it does on every chart in the product. */
+.jn-day.has {
+  border-style: solid; border-color: var(--line); background: var(--surface);
+}
+.jn-day.sel {
+  border-color: var(--teal); background: var(--teal-d);
+}
+.jn-day.future { opacity: .34; cursor: not-allowed; }
+.jn-day.future:hover { background: transparent; border-color: var(--line-2); }
+.jn-day-w {
+  font-family: var(--mono); font-size: .56rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-4);
+}
+.jn-day.sel .jn-day-w { color: var(--teal-b); }
+.jn-day-d { font-size: 1.4rem; line-height: 1.1; color: var(--ink-2); }
+.jn-day.has .jn-day-d { color: var(--ink); }
+.jn-day.sel .jn-day-d { color: var(--teal-b); }
+.jn-day-s { font-size: .72rem; color: var(--ink-4); line-height: 1.35; margin-top: .15rem; }
+.jn-day.has .jn-day-s { color: var(--ink-3); }
+.jn-day-add {
+  font-size: .72rem; color: var(--teal); margin-top: auto;
+}
+.jn-day:hover .jn-day-add { color: var(--teal-b); }
+
+/* ---- day panel ----------------------------------------------- */
+.jn-sec-h {
+  display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap;
+  margin: var(--s5) 0 var(--s3); padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+.jn-daypanel > .jn-read > .jn-sec-h:first-child,
+.jn-daypanel > .jn-form > .jn-sec-h:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.jn-sec-t {
+  margin: 0; font-family: var(--serif); font-size: 1.02rem; font-weight: 700;
+  letter-spacing: -.012em; color: var(--ink);
+}
+.jn-sec-h .btn { margin-left: auto; }
+/* The raw/derived label. Small, always present, never a tooltip. */
+.jn-tag {
+  font-family: var(--mono); font-size: .56rem; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-4);
+}
+.jn-none {
+  margin: 0; font-size: .86rem; color: var(--ink-4); line-height: 1.55;
+  max-width: 68ch; padding: var(--s3) 0;
+}
+.jn-hint { margin: .35rem 0 0; font-size: .74rem; color: var(--ink-4); line-height: 1.5; }
+.jn-err {
+  margin: .55rem 0 0; font-size: .8rem; color: var(--coral-b);
+  background: var(--coral-d); border: 1px solid #5A2B2B;
+  border-radius: var(--r-sm); padding: .5rem .7rem; line-height: 1.5;
+}
+.jn-metrics { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+
+.jn-refl { display: grid; gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.jn-refl-r { background: var(--bg); padding: var(--s4) 1.1rem; }
+.jn-refl-q {
+  margin: 0 0 .35rem; font-family: var(--mono); font-size: .6rem;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--ink-4);
+}
+.jn-refl-a { margin: 0; font-size: .92rem; color: var(--ink); line-height: 1.6;
+  white-space: pre-wrap; }
+
+/* ---- forms ---------------------------------------------------- */
+.jn-fld { margin-bottom: var(--s4); }
+.jn-lbl {
+  display: block; margin-bottom: .4rem; font-size: .8rem; color: var(--ink-2);
+}
+.jn-scale { grid-template-columns: repeat(5, minmax(0, 1fr)); max-width: 26rem; }
+.jn-scale .scale-b { padding: .5rem .4rem; }
+.jn-num { max-width: 16rem; }
+.jn-times {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3); margin-bottom: .2rem;
+}
+.jn-formacts {
+  display: flex; gap: var(--s3); flex-wrap: wrap; align-items: center;
+  margin-top: var(--s5); padding-top: var(--s4); border-top: 1px solid var(--line);
+}
+.jn-formacts .jn-err { flex: 1 1 100%; }
+
+/* ---- activities ----------------------------------------------- */
+.jn-act {
+  display: grid; grid-template-columns: 3.6rem minmax(0, 1fr) auto;
+  gap: var(--s3) var(--s4); align-items: start;
+  padding: var(--s3) 0; border-bottom: 1px solid var(--line);
+}
+.jn-act:last-of-type { border-bottom: none; }
+/* Blank when no clock time was recorded. Never 00:00. */
+.jn-act-t { font-size: .8rem; color: var(--amber-b); padding-top: .1rem; }
+.jn-act-b { min-width: 0; }
+.jn-act-title { margin: 0; font-size: .95rem; color: var(--ink); }
+.jn-act-m {
+  margin: .2rem 0 0; font-family: var(--mono); font-size: .64rem;
+  letter-spacing: .06em; color: var(--ink-4); text-transform: uppercase;
+}
+.jn-act-d { margin: .35rem 0 0; font-size: .84rem; color: var(--ink-3); line-height: 1.55;
+  white-space: pre-wrap; }
+.jn-act-x { display: flex; gap: .2rem; }
+.jn-act-x .btn { padding: .3rem .55rem; font-size: .78rem; }
+.jn-del:hover { color: var(--coral-b); background: var(--coral-d); }
+.jn-addact { margin-top: var(--s4); }
+.jn-actform {
+  margin-top: var(--s4); padding: var(--s4);
+  border: 1px solid var(--line-2); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.jn-danger {
+  display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap;
+  margin-top: var(--s5); padding-top: var(--s4); border-top: 1px solid var(--line);
+}
+.jn-danger .jn-hint { margin: 0; }
+
+/* ---- derived summary ------------------------------------------ */
+.jn-cats { display: grid; gap: .45rem; margin-top: var(--s4); }
+.jn-cat {
+  display: grid; grid-template-columns: 9rem minmax(0, 1fr) 7rem;
+  gap: var(--s4); align-items: center;
+}
+.jn-cat-n { font-size: .82rem; color: var(--ink-2); }
+.jn-cat-t { height: 12px; border-radius: 2px; background: var(--surface-3); }
+.jn-cat-b { display: block; height: 100%; border-radius: 2px; background: var(--teal); }
+.jn-cat-v { font-family: var(--mono); font-size: .7rem; color: var(--ink-3);
+  text-align: right; }
+
+/* ---- responsive ----------------------------------------------- */
+@media (max-width: 1080px) {
+  .jn-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 780px) {
+  .jn-days { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .jn-times { grid-template-columns: 1fr; }
+  .jn-act { grid-template-columns: 3.2rem minmax(0, 1fr); }
+  .jn-act-x { grid-column: 1 / -1; }
+  .jn-cat { grid-template-columns: 7rem minmax(0, 1fr); }
+  .jn-cat-v { grid-column: 1 / -1; text-align: left; }
+  .jn-scale { max-width: none; }
+  .jn-actions { margin-left: 0; width: 100%; }
+}
+
+/* The initialisation sequence's last row now reports a real request, so
+   it needs a state for "the request failed". Amber rather than coral:
+   the Twin still exists locally, the database row does not. */
+.init-i.failed .init-st { color: var(--amber-b); }
+.init-i.failed .init-l { color: var(--ink-2); }

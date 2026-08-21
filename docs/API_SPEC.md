@@ -23,6 +23,14 @@ validates against.
 An HTTP endpoint that fits a model on request would mean the API had its own
 copy of the model, which is the thing this architecture is built to prevent.
 
+**Writable for what a person owns.** Profiles and daily records are the two
+resources a student writes, and they are the two that describe a real person
+rather than a pipeline run. They are kept in their own module
+(`routes_daily.py`) and their own tables, with no path from either into a model
+table - so "the API is read-only for model data" stays true in the strong sense:
+nothing a user can POST can reach a number the model produced. See
+[`DAILY_RECORDS.md`](DAILY_RECORDS.md).
+
 **One composite route for the dashboard.** `GET /students/{id}/twin` returns
 everything one screen needs. Six round trips to paint one page is a worse
 contract than one whose shape is documented and validated.
@@ -70,6 +78,17 @@ identical to a user; a status code does not.
 | GET | `/api/profiles/{id}` | Read a profile |
 | PUT | `/api/profiles/{id}` | Replace a profile |
 | DELETE | `/api/profiles/{id}` | Erase a profile |
+| GET | `/api/daily/vocabulary` | Activity categories, metrics and ranges, prompts |
+| GET | `/api/profiles/{id}/timeline` | Every study week this student has, plus rollups |
+| GET | `/api/profiles/{id}/weeks/{week}` | One week: seven day slots, days, rollup |
+| GET | `/api/profiles/{id}/days` | Recorded days, optionally within a date range |
+| POST | `/api/profiles/{id}/days` | Open a day, optionally with content |
+| GET | `/api/profiles/{id}/days/{date}` | One day, complete |
+| PUT | `/api/profiles/{id}/days/{date}` | Create or replace a day's metrics and answers |
+| DELETE | `/api/profiles/{id}/days/{date}` | Erase a day and everything in it |
+| POST | `/api/profiles/{id}/days/{date}/activities` | Add one activity to a day |
+| PUT | `/api/profiles/{id}/activities/{aid}` | Replace one activity |
+| DELETE | `/api/profiles/{id}/activities/{aid}` | Remove one activity |
 
 ---
 
@@ -233,13 +252,272 @@ inference model learns from weekly behavioural observations; this prototype has
 no path to collect them, so nothing a user types is model input. A client cannot
 render a profile without receiving that fact.
 
-**Validation:** `display_name` ≤ 120 chars. `payload` is stored verbatim as JSON.
+`days_recorded` counts the profile's daily records - raw student-entered
+history, which `observations` deliberately does not include because the two are
+different things. `term_start` is the Monday anchoring week numbering for those
+records; it is normalised to a Monday on write, so the response echoes the stored
+value rather than the submitted one. **Changing it on a `PUT` re-derives every
+stored `week_index`**, because leaving them alone would silently misfile the
+student's whole history.
+
+**Validation:** `display_name` ≤ 120 chars, `term_start` an ISO date.
+`payload` is stored verbatim as JSON.
 **Disabled** with `403 profiles_disabled` when `STUDYTWIN_ALLOW_PROFILES=0`.
 
 ### `GET|PUT|DELETE /api/profiles/{id}`
 
 `404 profile_not_found` when absent. `DELETE` returns `204` and is the only
 destructive route in the API.
+
+---
+
+## Daily records
+
+The API's other half. Everything above this section serves model output and is
+read-only by design; everything here is a student writing their own history.
+They share a URL space and a set of conventions, and are separate modules
+(`routes.py`, `routes_daily.py`) so the boundary stays legible.
+
+Full reasoning, including the model-integration status:
+[`DAILY_RECORDS.md`](DAILY_RECORDS.md).
+
+**Two conventions are specific to this half.**
+
+*Every path begins `/api/profiles/{profile_id}`.* There is no route that reaches
+a day, an activity or a week without naming its owner, and the repository has no
+method that would let one. Isolation is a property of the URL space rather than a
+check somebody has to remember to write.
+
+*A day is addressed by its date, not by an opaque id.* `PUT
+/days/2026-08-20` is idempotent, readable in a log, and lets a client save
+without first resolving an id it does not have. Activities keep ids, because a
+day genuinely has many of them and they are edited one at a time.
+
+**Writes ride the `STUDYTWIN_ALLOW_PROFILES` switch.** Daily records are the same
+category of data as a profile - a real person's account of their own life - so a
+deployment that has turned off personal data storage must not still accept days.
+One switch rather than two, because two is how one of them ends up on by
+accident. `403 profiles_disabled`.
+
+### Route table
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/daily/vocabulary` | Categories, metrics with ranges, prompts, sources |
+| GET | `/api/profiles/{id}/timeline` | Every study week this student has, plus weekly rollups |
+| GET | `/api/profiles/{id}/weeks/{week}` | One week: seven day slots, their days, the rollup |
+| GET | `/api/profiles/{id}/days` | Recorded days, optionally `?start=&end=` |
+| POST | `/api/profiles/{id}/days` | Open a day, optionally with content |
+| GET | `/api/profiles/{id}/days/{date}` | One day, complete |
+| PUT | `/api/profiles/{id}/days/{date}` | Create or replace a day's metrics and answers |
+| DELETE | `/api/profiles/{id}/days/{date}` | Erase a day and everything in it |
+| POST | `/api/profiles/{id}/days/{date}/activities` | Add one activity |
+| PUT | `/api/profiles/{id}/activities/{activity_id}` | Replace one activity |
+| DELETE | `/api/profiles/{id}/activities/{activity_id}` | Remove one activity |
+
+---
+
+### `GET /api/daily/vocabulary`
+
+The closed vocabularies the forms and the SQL `CHECK` constraints share.
+
+```jsonc
+{ "activity_categories": [ { "value": "class", "label": "Class or lecture" }, ... ],
+  "activity_statuses":   [ { "value": "done",  "label": "Completed" }, ... ],
+  "metrics": [ { "value": "mood", "label": "Mood", "min": 1, "max": 5,
+                 "unit": "/5", "step": 1 },
+               { "value": "sleep_hours", "label": "Sleep", "min": 0, "max": 24,
+                 "unit": "h", "step": 0.5 }, ... ],
+  "reflection_prompts": [ { "value": "difficult",
+                            "label": "What did you find difficult?" }, ... ],
+  "sources": ["student", "system", "import", "other"] }
+```
+
+Served rather than duplicated in the frontend. A form whose options are typed out
+again in JavaScript drifts from the `CHECK` the first time either changes, and the
+user sees a `422` they cannot act on.
+
+---
+
+### `GET /api/profiles/{id}/timeline`
+
+```jsonc
+{ "profile_id": "...", "term_start": "2026-06-22", "term_start_declared": true,
+  "n_weeks": 9, "days_recorded": 12,
+  "first_date": "2026-06-24", "last_date": "2026-08-20",
+  "today": "2026-08-21",
+  "weeks":   [ { "week": 1, "start_date": "2026-06-22", "end_date": "2026-06-28",
+                 "days_recorded": 3, "n_activities": 7, "has_data": true }, ... ],
+  "rollups": [ WeekRollup, ... ],
+  "model_input": false }
+```
+
+**`n_weeks` is derived, and there is no constant behind it.** The span runs from
+week 1 to whichever is later: the last week holding data, or the week containing
+today. Today is included so a student always has somewhere to put today's entry;
+nothing beyond it is manufactured. A fixed-length strip that happens to be mostly
+empty makes a claim about the data that the data does not make.
+
+`rollups` covers **only weeks that hold rows**. An empty week has no rollup,
+because a row of zeros reads as a measurement.
+
+`term_start_declared: false` means the anchor was inferred from the earliest
+recorded day rather than set by the student. Week numbers move if they later
+declare one, and the UI says so.
+
+**Errors:** `404 profile_not_found`.
+
+---
+
+### `GET /api/profiles/{id}/weeks/{week}`
+
+```jsonc
+{ "profile_id": "...", "week": 8,
+  "start_date": "2026-08-10", "end_date": "2026-08-16",
+  "term_start": "2026-06-22", "term_start_declared": true,
+  "slots": [ { "date": "2026-08-10", "day_of_week": 1, "weekday": "Monday",
+               "recorded": false, "day_id": null, "n_activities": 0,
+               "n_metrics": 0, "n_reflections": 0, "is_future": false }, ... ],
+  "days":   [ DayDetail, ... ],
+  "rollup": WeekRollup,
+  "derived": true }
+```
+
+**Always seven slots, recorded or not, and never a `404` for an untouched week.**
+The screen exists so an empty week can be filled in; 404-ing it would mean a
+student could only edit weeks they had already written to. A slot with
+`recorded: false` carries no counts and no metrics — not zeros.
+
+`is_future` marks a date that has not happened in the server's timezone, so the
+UI can withhold the add action rather than offering one the API will refuse.
+
+**Validation:** `week` 1–520. Out of range is `422 bad_week`. The cap is a guard
+against a date computation on `/weeks/900000000`, not a statement about course
+length — the real number of weeks is on the timeline and comes from the data.
+
+---
+
+### `GET|POST /api/profiles/{id}/days`
+
+`GET` returns only the days that **exist**, optionally filtered by `?start=` and
+`?end=` (inclusive ISO dates). The week route is the one that renders seven slots
+including empty ones, because that is a calendar; this is a list of what was
+written. `start` after `end` is `422 bad_range`.
+
+`POST` opens a day, optionally with observations, reflections and activities in
+one request:
+
+```jsonc
+{ "date": "2026-08-13",
+  "observations": { "mood": 4, "focus": 3, "sleep_hours": 7 },
+  "reflections": { "difficult": "dynamic programming",
+                   "learned": "memoization" },
+  "activities": [ { "title": "DBMS Lecture", "category": "class",
+                    "start_time": "09:00", "end_time": "10:30" } ] }
+```
+
+→ `201` with the complete `DayDetail`. The week is **derived server-side** from
+the date; a client that could send its own week number could file Thursday in
+week 3 and Friday in week 40.
+
+**`409 day_exists` on a duplicate date**, translated from the
+`UNIQUE (profile_id, date)` constraint rather than pre-checked with a `SELECT`,
+which would be a race. Quietly merging into the existing day would let a
+double-submitted form append the same five activities twice.
+
+---
+
+### `GET|PUT|DELETE /api/profiles/{id}/days/{date}`
+
+`PUT` is **create-or-replace**, so Save is one call whether or not the day
+already existed:
+
+```jsonc
+{ "observations": { "mood": 2 }, "reflections": {} }
+```
+
+**REPLACE, not merge.** An omitted metric has been *cleared*. A student who
+deletes their stress rating and saves must not find it still there, and merge
+semantics would make clearing a field impossible through this route.
+
+**Activities are untouched by a `PUT`.** They have their own ids and their own
+routes; folding them in would mean every save re-created every row and
+invalidated the ids the client was holding.
+
+`DELETE` is a hard delete returning `204`, cascading to activities, metrics and
+prose. A soft delete would leave a person's account of a day in the database
+after they asked for it to be gone.
+
+**Errors:** `404 day_not_found` (with a hint naming the `PUT`), `422 bad_date`,
+`422 future_date`, `422 invalid_day_content`.
+
+---
+
+### Activities
+
+```jsonc
+// POST /api/profiles/{id}/days/{date}/activities
+{ "title": "Worked on ML assignment", "category": "assignment",
+  "subject": "Machine Learning", "detail": "finished the write-up",
+  "start_time": "11:00", "end_time": "13:00",
+  "minutes": null, "importance": 4, "status": "partial" }
+```
+
+→ `201 ActivityOut`, carrying `activity_id`, `seq`, `source` and timestamps.
+
+**`minutes` is derived from the clock pair** when it is not given: `11:00–13:00`
+stores `120`. An explicitly stated duration always wins, because it is the more
+direct statement and overwriting it would discard what the person asserted.
+`null` means **unknown** and stays null — it is excluded from weekly totals
+rather than counted as zero.
+
+**An `end_time` before its `start_time` is `422`**, not wrapped past midnight.
+Guessing which of the two readings was meant would put an invented eleven-hour
+session in a weekly total; an overnight activity is recorded as two entries.
+
+**The day must already exist** (`404 day_not_found`). Auto-creating it would make
+a mistyped date silently open a day the student never intended, in a week they
+were not looking at.
+
+`PUT` and `DELETE` on `/activities/{activity_id}` resolve through the owning
+profile, never by id alone: the query joins `day_records` on `profile_id`, so an
+activity belonging to somebody else is a `404` and not an edit.
+
+---
+
+### Honesty guarantees, asserted by tests
+
+`tests/test_api_daily.py` asserts each of these directly:
+
+* **a metric that was not recorded is ABSENT from the payload** — not zero, not
+  null. The UI can then omit the element rather than render a placeholder.
+* **`model_input: false`** is present on every daily payload and on the profile.
+  Daily data is persisted, aggregated and displayed, and consumed by no model;
+  see [`DAILY_RECORDS.md`](DAILY_RECORDS.md) §5 for why, specifically.
+* **`minutes_logged` never travels without `activities_without_duration`**, so a
+  sum over half the activities cannot be read as a total.
+* **every weekly metric mean carries `n`** — a one-day average and a seven-day
+  average are different claims.
+* **an opened-but-empty day is distinguishable from an absent one**:
+  `days_recorded` counts the first, `days_with_content` only the second.
+* **one profile cannot read or edit another's records**, asserted from both
+  directions including by activity id.
+
+### Daily-record errors
+
+| Status | `error` | Cause |
+|---|---|---|
+| 404 | `profile_not_found` | no such profile |
+| 404 | `day_not_found` | that date is not recorded for this profile |
+| 404 | `activity_not_found` | no such activity **on this profile** |
+| 409 | `day_exists` | `UNIQUE (profile_id, date)` |
+| 422 | `bad_date` | not an ISO-8601 calendar date |
+| 422 | `future_date` | the day has not happened yet |
+| 422 | `bad_week` | week outside 1–520 |
+| 422 | `bad_range` | `start` after `end` |
+| 422 | `invalid_day_content` | a database constraint rejected the content |
+| 403 | `profiles_disabled` | `STUDYTWIN_ALLOW_PROFILES=0` |
+
 
 ---
 
@@ -276,7 +554,8 @@ Stated plainly, including what is **not** done.
 | Secret management | No secret in the codebase. All configuration is environment variables with development-safe defaults (`api/settings.py`). |
 | Error leakage | Unhandled exceptions are logged and returned as a generic `500`. |
 | PII isolation | The `profiles` table is the only one that can hold a real name. No foreign key connects it to any model table. `DELETE` is a hard delete. |
-| Destructive-write surface | Exactly one route: `DELETE /api/profiles/{id}`. |
+| Destructive-write surface | Four routes, all reaching only data the requesting profile owns: `DELETE /api/profiles/{id}` (cascades to every day), `DELETE .../days/{date}`, `DELETE .../activities/{aid}`, and `PUT .../days/{date}` which replaces a day's content. No route can delete or alter a model number. |
+| Cross-account access | Every daily route is scoped by `profile_id` in its path, and every repository method that reaches a day or an activity joins the owner in. There is deliberately no `day_by_id`. Asserted from both directions in `tests/test_api_daily.py::test_one_student_cannot_reach_another_students_records`. |
 
 **Not implemented, and out of scope for a single-machine research prototype**
 
@@ -285,6 +564,12 @@ Stated plainly, including what is **not** done.
   acceptable because the model data describes nobody, and unacceptable the
   moment real student data is ingested - which is why that gate is in
   `README.md` as a blocker rather than a nice-to-have.
+
+  **Daily records raise the stakes of that gap and do not change its status.**
+  Profile isolation is enforced *given* a `profile_id`; the id itself is
+  unguessable (uuid4) but is not a credential, so the protection is against
+  accidental cross-account reads, not against an attacker who has one. Binding
+  to localhost remains the actual boundary until authentication exists.
 * **Rate limiting** and **audit logging.**
 * **Transport encryption.** Bind to localhost or put a TLS-terminating proxy in
   front. The application does not terminate TLS itself.

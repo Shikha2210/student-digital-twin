@@ -957,17 +957,63 @@
     ]));
 
     const strip = el("div", { class: "mstrip" });
-    [["Observations", "0", "weeks collected"],
-     ["State estimate", "prior", "cohort mean, maximum uncertainty"],
-     ["Personal baseline θ", "not fitted", "needs your own history"],
-     ["Simulation", "unavailable", "nothing to run forward"],
-    ].forEach((row) => {
+    const chips = [
+      ["Model observations", "0", "weekly behavioural channels"],
+      ["Days recorded", "—", "reading from the database…"],
+      ["State estimate", "prior", "cohort mean, maximum uncertainty"],
+      ["Personal baseline θ", "not fitted", "needs your own history"],
+    ];
+    const chipNodes = chips.map((row) => {
+      const val = el("span", { class: "mchip-val", text: row[1] });
+      const sub = el("span", { class: "mchip-sub", text: row[2] });
       strip.appendChild(el("div", { class: "mchip" }, [el("div", { class: "mchip-l" }, [
-        el("span", { class: "mchip-lbl", text: row[0] }),
-        el("span", { class: "mchip-val", text: row[1] }),
-        el("span", { class: "mchip-sub", text: row[2] })])]));
+        el("span", { class: "mchip-lbl", text: row[0] }), val, sub])]));
+      return { val: val, sub: sub };
     });
     v.appendChild(strip);
+
+    /* The days chip is the one number on this screen that comes from the
+       server, so it is filled in asynchronously and says what happened
+       either way. An em dash that never resolves would be indistinguishable
+       from a zero the student earned. */
+    (function () {
+      const pid = window.ST_Journal && window.ST_Journal.profileId();
+      if (!pid || !window.ST_Api || !window.ST_Api.profiles) {
+        chipNodes[1].val.textContent = "0";
+        chipNodes[1].sub.textContent = "no record on the server yet";
+        return;
+      }
+      window.ST_Api.profiles.get(pid).then((prof) => {
+        chipNodes[1].val.textContent = String(prof.days_recorded);
+        chipNodes[1].sub.textContent = prof.days_recorded
+          ? "days you have written up" : "nothing written up yet";
+      }).catch(() => {
+        chipNodes[1].val.textContent = "?";
+        chipNodes[1].sub.textContent = "API unreachable - cannot say";
+      });
+    })();
+
+    /* ---- the journal, given the prominence it needs ---- */
+    const jn = el("section", { class: "panel" });
+    jn.appendChild(el("div", { class: "panel-h" }, [el("div", {}, [
+      el("h2", { class: "panel-t", text: "Your daily record" }),
+      el("p", { class: "panel-s", text: "The part of your Twin you can actually " +
+        "fill in: what you did each day, how it went, and what you made of it. " +
+        "Stored in the database, so it is still there after a refresh, on any " +
+        "browser pointed at the same API." }),
+    ])]));
+    const jnActs = el("div", { class: "hero-cta" });
+    const jnGo = el("button", { type: "button", class: "btn btn-primary" },
+      [el("span", { text: "Open the daily journal" }), icon("arrow", 16)]);
+    jnGo.addEventListener("click", () => go("twin/journal"));
+    jnActs.appendChild(jnGo);
+    jn.appendChild(jnActs);
+    jn.appendChild(el("div", { class: "note" }, [icon("info", 16),
+      el("div", { html: "<b>Raw, derived and model output are three different " +
+        "things.</b> What you write is raw. The weekly totals the journal shows " +
+        "are derived from it and labelled that way. Neither is model input — " +
+        "the estimates on this page still come from the cohort prior." })]));
+    v.appendChild(jn);
 
     const learn = el("section", { class: "learning" });
     learn.appendChild(el("h2", { class: "panel-t", text: "Your Twin has nothing to show yet, and that is correct" }));
@@ -976,12 +1022,17 @@
         "update on and your state sits at the cohort prior with the widest uncertainty the " +
         "model can express. Drawing a line here would be fabrication, so there is no line." }));
     learn.appendChild(el("p", { style: "max-width:70ch",
-      text: "The prototype cannot yet collect weekly behavioural observations — that requires a " +
-        "connection to a learning platform, which does not exist. Everything you entered is " +
-        "stored on this device as context; none of it is model input." }));
+      text: "The prototype cannot collect weekly behavioural observations — that requires a " +
+        "connection to a learning platform, which does not exist. What it can collect is " +
+        "your own account of each day, and that is what the daily journal is for. Those " +
+        "records are stored in the database and are not model input either; they are read " +
+        "back, aggregated into weekly summaries, and labelled as raw throughout." }));
     const acts = el("div", { class: "hero-cta", style: "margin-top:1.5rem" });
     const b1 = el("button", { type: "button", class: "btn btn-primary" },
-      [el("span", { text: "See a Twin with 20 weeks of data" }), icon("arrow", 16)]);
+      // NW, not 20. The demo run's length is a property of the ingest, and a
+      // literal here would start lying the first time somebody runs
+      // ingest_run.py with a different --weeks.
+      [el("span", { text: "See a Twin with " + NW + " weeks of data" }), icon("arrow", 16)]);
     b1.addEventListener("click", () => go("app/home"));
     acts.appendChild(b1);
     const b2 = el("button", { type: "button", class: "btn btn-ghost", text: "Edit my answers" });
@@ -997,6 +1048,7 @@
       el("p", { class: "panel-s", text: "On this device only. No account, no server, no network request." }),
     ])]));
     const dl = el("div", { class: "dl" });
+    const pid = window.ST_Journal ? window.ST_Journal.profileId() : null;
     const rows = [
       ["Name", p.name || "—", "Profile only"],
       ["Year of study", p.level || "—", "Stored as context"],
@@ -1005,6 +1057,9 @@
       ["Self-reported study hours", p.baseline.study_hours === undefined ? "—" :
         String(p.baseline.study_hours), "Stored as context"],
       ["Consent given", p.consent ? "yes" : "no", "Profile only"],
+      ["Server record", pid ? pid.slice(0, 8) : "none",
+        pid ? "row in the profiles table; daily records hang off it"
+            : "not saved to the database yet"],
     ];
     rows.forEach((row) => {
       dl.appendChild(el("div", { class: "dl-r" }, [
@@ -1017,18 +1072,74 @@
     rec.appendChild(dl);
     rec.appendChild(el("div", { class: "note warn" }, [icon("alert", 16),
       el("div", { html: "<b>None of this is model input.</b> The inference model learns from " +
-        "weekly behavioural observations. Self-reported answers are kept as context for a " +
-        "future version and are labelled that way throughout." })]));
+        "weekly behavioural observations. Self-reported answers and daily records are kept " +
+        "as context for a future version and are labelled that way throughout." })]));
+
+    /* Deleting has to reach the server now, because the Twin is no longer
+       only local. Clearing localStorage alone would orphan the profile row
+       and every day hanging off it, which is the opposite of what the
+       button says it does. */
     const del = el("button", { type: "button", class: "btn btn-ghost", style: "margin-top:1.25rem",
-      text: "Delete my Twin from this device" });
-    del.addEventListener("click", () => {
+      text: pid ? "Delete my Twin and every day I recorded" : "Delete my Twin from this device" });
+    const delNote = el("p", { class: "jn-hint", style: "margin-top:.5rem" });
+    let armed = false;
+    del.addEventListener("click", async () => {
+      if (pid && !armed) {
+        armed = true;
+        del.textContent = "Delete permanently — click again";
+        delNote.textContent = "This erases the profile row and, by cascade, every day, " +
+          "activity, rating and note you recorded. There is no undo.";
+        return;
+      }
+      del.disabled = true;
+      if (pid) {
+        try {
+          await window.ST_Api.profiles.remove(pid);
+        } catch (err) {
+          // Say so rather than clearing local state and leaving the server
+          // row behind while the UI claims the Twin is gone.
+          del.disabled = false;
+          armed = false;
+          del.textContent = "Delete my Twin and every day I recorded";
+          delNote.innerHTML = "<b>Nothing was deleted.</b> " +
+            (err && err.message ? err.message : String(err));
+          return;
+        }
+        window.ST_Journal.clearProfileId();
+      }
+      if (window.ST_Journal) window.ST_Journal.reset();
       Store.clear();
       if (window.ST_Onboarding) window.ST_Onboarding.reset();
       go("");
     });
     rec.appendChild(del);
+    rec.appendChild(delNote);
     v.appendChild(rec);
     return v;
+  }
+
+  /* ============================================================
+     DAILY JOURNAL  —  mounted from journal.js
+
+     The one screen where a student writes. It lives in its own file
+     because it is the only part of the frontend that POSTs, and
+     keeping it separate makes "what can this application change"
+     answerable by opening one file.
+     ============================================================ */
+  function viewJournal() {
+    if (!window.ST_Journal) {
+      return emptyState("The journal module did not load",
+        "<code>journal.js</code> is missing or threw while parsing. Reload the " +
+        "page; if it persists, check the browser console.", "err");
+    }
+    const raw = Store.read2();
+    const folded = raw ? v2fold(raw) : Store.read();
+    if (!folded) {
+      return emptyState("No Twin on this device",
+        "Daily records belong to a Twin, and there is not one yet. " +
+        "<a class='link-btn' href='#/onboarding' data-go='onboarding'>Create your Twin</a>");
+    }
+    return window.ST_Journal.render(Object.assign({ local: raw || {} }, OB_CTX));
   }
 
   /* ============================================================
@@ -1036,6 +1147,7 @@
      ============================================================ */
   const VIEWS = {
     mytwin:   { label: "My Twin",   icon: "user",   render: viewMyTwin,  mode: "personal", group: "Subject" },
+    journal:  { label: "Daily journal", icon: "clock", render: viewJournal, mode: "personal", group: "Subject" },
     home:     { label: "Twin Home", icon: "home",   render: viewHome,    mode: "demo", group: "Subject" },
     timeline: { label: "Timeline",  icon: "clock",  render: viewTimeline, mode: "demo", group: "Subject" },
     deep:     { label: "Deep Dive", icon: "layers", render: viewDeep,    mode: "demo", group: "Subject" },
@@ -1074,7 +1186,12 @@
       const b = el("button", { type: "button" },
         [icon(cfg.icon, 17), el("span", { text: cfg.label })]);
       if (k === route) b.setAttribute("aria-current", "page");
-      b.addEventListener("click", () => go(personal ? "twin" : "app/" + k));
+      // Personal routes are #/twin and #/twin/<view>. Before the journal
+      // existed there was only one personal view, so every personal nav
+      // button went to "twin"; leaving that in place would have made the
+      // journal unreachable from the sidebar that lists it.
+      b.addEventListener("click", () =>
+        go(personal ? (k === "mytwin" ? "twin" : "twin/" + k) : "app/" + k));
       nav.appendChild(b);
     });
     if (personal) {
@@ -1218,9 +1335,10 @@
       return;
     }
     if (h.startsWith("twin")) {
+      const sub = h.split("/")[1] || "mytwin";
       site.hidden = true; app.hidden = false;
       app.className = "app";
-      mountApp("mytwin");
+      mountApp(VIEWS[sub] && VIEWS[sub].mode === "personal" ? sub : "mytwin");
       window.scrollTo(0, 0);
       return;
     }
@@ -1761,6 +1879,13 @@
       ["Courses and context", nCourses ? "COMPLETE" : "PARTIAL"],
       ["Personal baseline θ", hasBase ? "SELF-REPORTED" : "NOT FITTED"],
       ["Observation history", "EMPTY"],
+      // The one step that does real work. POST /api/profiles has existed
+      // since the backend was written and had no caller: onboarding wrote
+      // to localStorage and stopped, so a Twin survived only as long as
+      // that browser's storage did. Daily records need a row to hang off,
+      // so this is where it gets created - and the row reports what
+      // actually happened, including failure.
+      ["Database record", "PENDING"],
     ];
     const list = el("div", { class: "init-list" });
     STEPS.forEach((row, i) => {
@@ -1776,26 +1901,62 @@
     const cta = el("button", { type: "button", class: "btn btn-primary" },
       [el("span", { text: "Open my Twin" }), icon("arrow", 16)]);
     cta.addEventListener("click", () => go("twin"));
-    done.appendChild(el("p", { class: "note" }, [icon("info", 16),
+    const doneNote = el("p", { class: "note" }, [icon("info", 16),
       el("div", { html: "<b>Your Twin is ready, and it has observed nothing.</b> " +
         "The personal baseline is self-reported context, not a fitted set point. " +
-        "It becomes a real estimate only once weekly observations exist." })]));
+        "It becomes a real estimate only once weekly observations exist. What you " +
+        "<em>can</em> record from today is your own account of each day." })]);
+    done.appendChild(doneNote);
     done.appendChild(el("div", { style: "margin-top:1.25rem" }, [cta]));
     inner.appendChild(done);
+
+    /* Create the server row while the sequence plays. Not faked into the
+       animation: the step reports whatever the request actually returns,
+       and a failure leaves the Twin usable locally while saying plainly
+       that the daily journal will not work until the API is reachable. */
+    let serverStatus = null;
+    const saving = (window.ST_Journal
+      ? window.ST_Journal.ensureProfile(p)
+      : Promise.reject(new Error("journal.js did not load")))
+      .then((pid) => { serverStatus = { ok: true, text: "SAVED " + pid.slice(0, 8) }; })
+      .catch((err) => { serverStatus = { ok: false, text: "NOT SAVED", err: err }; });
     wrap.appendChild(inner);
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const rows = list.querySelectorAll(".init-i");
+    const lastIx = rows.length - 1;
     let i = 0;
-    function tick() {
-      if (i > 0) {
-        rows[i - 1].classList.remove("on");
-        rows[i - 1].classList.add("done");
-        rows[i - 1].querySelector(".init-st").textContent = STEPS[i - 1][1];
-      }
-      if (i >= rows.length) {
+    function settle(ix) {
+      rows[ix].classList.remove("on");
+      rows[ix].classList.add("done");
+      rows[ix].querySelector(".init-st").textContent = STEPS[ix][1];
+    }
+    function finish() {
+      // The last row waits for the real request rather than for a timer.
+      saving.then(() => {
+        STEPS[lastIx][1] = serverStatus.text;
+        settle(lastIx);
+        if (!serverStatus.ok) {
+          rows[lastIx].classList.add("failed");
+          doneNote.querySelector("div").innerHTML =
+            "<b>Your Twin was not saved to the database.</b> " +
+            (serverStatus.err && serverStatus.err.message
+              ? serverStatus.err.message : "The API did not respond.") +
+            " Your answers are safe on this device, and the daily journal will " +
+            "work as soon as the API is reachable — it stores days in the " +
+            "database and has no local fallback by design.";
+          doneNote.className = "note warn";
+        }
         done.hidden = false;
         done.classList.add("rise");
+      });
+    }
+    function tick() {
+      if (i > 0) settle(i - 1);
+      if (i >= lastIx) {
+        rows[lastIx].classList.add("on");
+        rows[lastIx].querySelector(".init-st").textContent = "…";
+        finish();
         return;
       }
       rows[i].classList.add("on");

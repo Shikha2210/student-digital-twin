@@ -117,6 +117,54 @@ So each control declares its own expectation, and the verdict is three-valued
 (`COLLAPSED` / `SURVIVED` / `UNDEFINED`) with a control-specific interpretation.
 The one genuine leakage test is `permute_student_identity`.
 
+
+## Daily records
+
+Added after the API and the frontend, and the only part of the system that
+accepts input from a person rather than from an adapter.
+
+**The decision that shaped it.** A day a student lived is not a model quantity,
+so it must not live in a model table. Every model-derived table is keyed by
+`run_id` and cascade-deletes with its run; a person's account of their Tuesday
+that vanished on a re-ingest would be a data-loss bug dressed as provenance. So
+the daily tables hang off `profiles` - the only run-independent, person-scoped,
+writable table in the schema - and carry no `run_id` at all.
+
+That single choice buys three properties without any further mechanism: the
+history survives re-ingests, "delete a user" stays one `DELETE`, and every read
+is reachable only through a `profile_id`, which makes cross-account access
+structurally impossible rather than a rule to remember.
+
+**Why the aggregation is a module and not a method.** `daily/aggregate.py` takes
+plain dicts and returns plain dataclasses, importing nothing from `state/`,
+`models/`, `simulation/`, `evaluation/` or any adapter. It is the seam a future
+adapter would attach to, and keeping it free of both the store and the API is
+what lets it be tested without either.
+
+**Why the model does not consume it, and what would change that.** The filter's
+emission models are fitted per channel; a weekly mean of a self-reported 1-5
+scale has no fitted loading, no dispersion parameter and no place in
+`TwinParameters`. Inventing those would be a fabricated result. The schema
+already names the correct route - `Channel.LIFESTYLE` / `ACTIVITY_LOG` and
+`Channel.SELF_REPORT` / `PERCEIVED_LOAD`, declared unavailable by every current
+adapter - and A-07 already says what to do with it: "adding a survey instrument
+later is a new adapter, not a schema migration". So the integration is a new
+adapter plus a refit, not a shortcut out of the aggregation module.
+
+**Rejected alternatives.**
+
+| Considered | Rejected because |
+|---|---|
+| A `week_data` JSON column on a weekly table | Cannot be queried, indexed or constrained; one blob per student is the thing normalisation exists to prevent |
+| One wide `day` table with a column per metric | Puts a plausible-looking number one careless `COALESCE` away, and needs a migration per metric. Long format keeps "not recorded" as an absent row |
+| Storing the weekly rollup | A stored aggregate can silently disagree with the rows beneath it. Recomputing on read cannot |
+| Free-text activity categories | Forty spellings of "studying" within a week, after which no aggregate means anything |
+| A `localStorage` fallback for the journal | A write that "succeeds" while the server is down is the exact failure the feature exists to remove |
+| A polymorphic owner (profile *or* model student) | A nullable-pair foreign key that no constraint can enforce, to serve a synthetic student who never lived a day |
+| A generic `DataSource` plugin interface | Abstraction with one implementation and no second caller. A `source` enum on the row covers the real need |
+
+Full treatment: [`DAILY_RECORDS.md`](DAILY_RECORDS.md).
+
 ## Dependencies
 
 numpy, pandas, scipy, scikit-learn. Optional: streamlit + matplotlib

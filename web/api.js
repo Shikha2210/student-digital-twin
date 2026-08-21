@@ -335,12 +335,117 @@
     getJSON: getJSON,
     fromApi: fromApi,
     fromSnapshot: fromSnapshot,
-    createProfile: function (body) {
-      return fetch(API_BASE + "/api/profiles", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }).then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))));
-    },
   };
+
+  /* ==================================================================
+     WRITES  ·  profiles and daily records
+
+     Everything above this line is read-only transport for model output,
+     and it has a snapshot to fall back on. Nothing below it does, on
+     purpose: a write that "succeeds" into localStorage while the server
+     is down is the exact failure this feature exists to remove - the
+     student closes the tab believing their week is saved.
+
+     So these calls surface their failure. `ST_Journal` renders the
+     error and keeps the form filled so nothing typed is lost.
+     ================================================================== */
+
+  /** One request with a body. Throws an Error carrying `status` and the
+      parsed `{error, detail, hint}` the API returns, so a caller can show
+      the server's own sentence rather than inventing one. */
+  async function send(method, path, body) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(API_BASE + path, {
+        method: method,
+        signal: ctrl.signal,
+        headers: body === undefined
+          ? { Accept: "application/json" }
+          : { Accept: "application/json", "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if (res.status === 204) return null;
+      const parsed = await res.json().catch(() => null);
+      if (!res.ok) {
+        const err = new Error(apiMessage(parsed, res.status, path));
+        err.status = res.status;
+        err.body = parsed;
+        throw err;
+      }
+      return parsed;
+    } catch (e) {
+      if (e.name === "AbortError") {
+        const err = new Error("The server did not respond within " +
+          (TIMEOUT_MS / 1000) + "s.");
+        err.status = 0;
+        throw err;
+      }
+      if (e.status === undefined) {
+        const err = new Error("Could not reach the API at " +
+          (API_BASE || location.origin) + ".");
+        err.status = 0;
+        err.hint = "Start it with: uvicorn student_twin.api.app:app --port 8000";
+        throw err;
+      }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Turn an API error body into one readable sentence.
+
+      FastAPI reports validation failures as a list of field errors under
+      `detail`; this project's own errors are a single object. Both are
+      handled here so no screen has to know the difference. */
+  function apiMessage(parsed, status, path) {
+    const d = parsed && parsed.detail;
+    if (d && typeof d === "object" && !Array.isArray(d) && d.detail) {
+      return d.detail + (d.hint ? " " + d.hint : "");
+    }
+    if (Array.isArray(d) && d.length) {
+      return d.map((x) => {
+        const where = (x.loc || []).filter((p) => p !== "body").join(".");
+        return (where ? where + ": " : "") + (x.msg || "invalid value");
+      }).join("; ");
+    }
+    if (typeof d === "string") return d;
+    return "HTTP " + status + " on " + path;
+  }
+
+  const enc = encodeURIComponent;
+
+  window.ST_Api = window.ST_Api || {};
+  window.ST_Api.profiles = {
+    create: (body) => send("POST", "/api/profiles", body),
+    get: (id) => send("GET", "/api/profiles/" + enc(id)),
+    update: (id, body) => send("PUT", "/api/profiles/" + enc(id), body),
+    remove: (id) => send("DELETE", "/api/profiles/" + enc(id)),
+  };
+
+  /** The daily-record surface. One function per route, no shaping: the
+      API payloads are already the shape the journal renders, which is
+      the point of assembling them server-side. */
+  window.ST_Api.daily = {
+    vocabulary: () => send("GET", "/api/daily/vocabulary"),
+    timeline: (pid) => send("GET", "/api/profiles/" + enc(pid) + "/timeline"),
+    week: (pid, w) => send("GET", "/api/profiles/" + enc(pid) + "/weeks/" + Number(w)),
+    day: (pid, d) => send("GET", "/api/profiles/" + enc(pid) + "/days/" + enc(d)),
+    days: (pid) => send("GET", "/api/profiles/" + enc(pid) + "/days"),
+    createDay: (pid, body) => send("POST", "/api/profiles/" + enc(pid) + "/days", body),
+    // PUT is create-or-replace on the date, so Save is one call whether or
+    // not the day already existed.
+    saveDay: (pid, d, body) =>
+      send("PUT", "/api/profiles/" + enc(pid) + "/days/" + enc(d), body),
+    deleteDay: (pid, d) =>
+      send("DELETE", "/api/profiles/" + enc(pid) + "/days/" + enc(d)),
+    addActivity: (pid, d, body) =>
+      send("POST", "/api/profiles/" + enc(pid) + "/days/" + enc(d) + "/activities", body),
+    updateActivity: (pid, aid, body) =>
+      send("PUT", "/api/profiles/" + enc(pid) + "/activities/" + enc(aid), body),
+    deleteActivity: (pid, aid) =>
+      send("DELETE", "/api/profiles/" + enc(pid) + "/activities/" + enc(aid)),
+  };
+  window.ST_Api.send = send;
 })();
